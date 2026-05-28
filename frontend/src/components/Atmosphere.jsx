@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import * as THREE from "three";
 
 import { EARTH_RADIUS } from "../lib/geo.js";
@@ -23,37 +22,23 @@ void main() {
 `;
 
 const ATMOS_FRAGMENT = /* glsl */ `
-uniform vec3 sunDir;
 varying vec3 vNormal;
 varying vec3 vWorldPos;
 void main() {
   vec3 viewDir = normalize(cameraPosition - vWorldPos);
-  float rim = pow(1.0 - max(dot(viewDir, vNormal), 0.0), 2.4);
-
-  // Lit side gets a cyan-blue tint, dark side stays violet.
-  float sunFacing = max(dot(normalize(vNormal), normalize(sunDir)), 0.0);
-  vec3 dayTint = vec3(0.28, 0.55, 1.0);
-  vec3 duskTint = vec3(0.45, 0.2, 0.55);
-  vec3 col = mix(duskTint, dayTint, sunFacing);
-
-  gl_FragColor = vec4(col * rim, rim);
+  float rim = pow(1.0 - max(dot(viewDir, vNormal), 0.0), 3.0);
+  // Single steel-blue tone, very subtle.
+  vec3 col = vec3(0.32, 0.55, 0.85);
+  gl_FragColor = vec4(col * rim * 0.55, rim * 0.55);
 }
 `;
 
 export default function Atmosphere() {
-  const uniforms = useMemo(
-    () => ({
-      sunDir: { value: new THREE.Vector3(5, 2, 5).normalize() },
-    }),
-    [],
-  );
-
   return (
     <mesh>
-      <sphereGeometry args={[EARTH_RADIUS * 1.045, 64, 64]} />
+      <sphereGeometry args={[EARTH_RADIUS * 1.025, 64, 64]} />
       <shaderMaterial
         attach="material"
-        uniforms={uniforms}
         vertexShader={ATMOS_VERTEX}
         fragmentShader={ATMOS_FRAGMENT}
         side={THREE.BackSide}
