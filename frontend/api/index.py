@@ -34,9 +34,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
-BBOX_NAME = os.getenv("BBOX_NAME", "europe")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
+BBOX_NAME = os.getenv("BBOX_NAME", "europe").strip()
 
 # Tiny per-instance cache to avoid hammering Supabase on busy CDN nodes.
 _CACHE: dict[str, tuple[float, dict]] = {}
