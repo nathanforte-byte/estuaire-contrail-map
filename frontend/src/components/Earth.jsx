@@ -97,18 +97,24 @@ export default function Earth({ persistentFlights = [], trajectories = [] }) {
         pointAltitude={0.012}
         pointRadius={0.22}
         pointsMerge={true}
-        /* Real trajectories from /api/trajectories */
+        /* Real trajectories — lifted into the atmosphere with a flowing dash
+           pattern so they read as "in-flight motion" without rotating anything. */
         pathsData={trajectories}
         pathPoints={(t) => t.coords}
         pathPointLat={(p) => p[1]}
         pathPointLng={(p) => p[0]}
-        pathPointAlt={0.0035}
+        pathPointAlt={0.05}
         pathColor={() => [
           "rgba(255, 77, 109, 0)",
-          "rgba(255, 77, 109, 0.85)",
+          "rgba(255, 77, 109, 0.95)",
+          "rgba(255, 77, 109, 0.95)",
           "rgba(255, 77, 109, 0)",
         ]}
-        pathStroke={0.6}
+        pathStroke={1.4}
+        pathDashLength={0.28}
+        pathDashGap={0.06}
+        pathDashAnimateTime={5500}
+        pathDashInitialGap={(t) => (t.icao24 ? t.icao24.charCodeAt(0) / 256 : 0)}
         pathTransitionDuration={0}
       />
     </div>
