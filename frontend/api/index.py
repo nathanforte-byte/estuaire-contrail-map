@@ -94,8 +94,62 @@ async def flights():
     payload = row["payload"]
     # Make sure the response carries the snapshot age so the UI can show a "last updated" badge.
     payload["fetched_at"] = row.get("fetched_at") or payload.get("fetched_at")
+
+    # Stamp aircraft_type onto each flight using a single bulk PostgREST lookup.
+    # Worst-case payload here is the icao24 list serialised into a URL filter
+    # (a few hundred → a few thousand chars), still well below Vercel's limits.
+    flights_list = payload.get("flights") or []
+    icaos = list({f.get("icao24") for f in flights_list if f.get("icao24")})
+    type_by_icao = await _aircraft_types(icaos)
+    for f in flights_list:
+        t = type_by_icao.get(f.get("icao24"))
+        if t:
+            f["aircraft_type"] = t
+
     _store("snapshot", payload)
     return payload
+
+
+async def _aircraft_types(icao24s: list[str]) -> dict[str, str]:
+    """Bulk lookup of aircraft_metadata.type_code keyed by icao24.
+
+    Returns {} if no rows or on any upstream error — never blocks the response.
+    Cached in-process for SNAPSHOT_TTL to amortise across requests.
+    """
+    if not icao24s:
+        return {}
+    cache_key = "aircraft_types:" + str(hash(tuple(sorted(icao24s))))
+    cached = _cached(cache_key, SNAPSHOT_TTL)
+    if cached is not None:
+        return cached  # type: ignore[return-value]
+
+    # PostgREST `in.(a,b,c)` filter. Chunk the request to keep URLs reasonable.
+    headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
+    }
+    out: dict[str, str] = {}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for i in range(0, len(icao24s), 200):
+                chunk = icao24s[i : i + 200]
+                in_list = ",".join(chunk)
+                url = (
+                    f"{SUPABASE_URL}/rest/v1/aircraft_metadata"
+                    f"?icao24=in.({in_list})"
+                    f"&select=icao24,type_code"
+                )
+                r = await client.get(url, headers=headers)
+                r.raise_for_status()
+                for row in r.json():
+                    tc = row.get("type_code")
+                    if tc:
+                        out[row["icao24"]] = tc
+    except httpx.HTTPError:
+        return out  # partial is fine; UI degrades gracefully
+
+    _store(cache_key, out)
+    return out
 
 
 @app.get("/api/trajectories")
@@ -137,6 +191,10 @@ async def trajectories(hours: int = 24):
     except httpx.HTTPError as e:
         raise HTTPException(502, f"Supabase upstream: {type(e).__name__}: {e!r}") from e
 
+    # Stamp aircraft_type from the metadata table on each row.
+    icaos = list({row["icao24"] for row in rows if row.get("icao24")})
+    type_by_icao = await _aircraft_types(icaos)
+
     features = []
     for row in rows:
         wps = row.get("waypoints") or []
@@ -153,6 +211,7 @@ async def trajectories(hours: int = 24):
                 "country": row.get("country"),
                 "origin_icao": row.get("origin_icao"),
                 "destination_icao": row.get("destination_icao"),
+                "aircraft_type": type_by_icao.get(row["icao24"]),
                 "points": len(coords),
                 "start_ts": row.get("start_ts"),
                 "end_ts": row.get("end_ts"),
