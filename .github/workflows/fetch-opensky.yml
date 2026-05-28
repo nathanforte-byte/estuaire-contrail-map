@@ -1,7 +1,9 @@
 name: fetch-opensky
 
 # Periodic OpenSky → Supabase fetcher. GitHub Actions Azure egress reaches
-# OpenSky cleanly (GCP/AWS/CF are blacklisted at ETH Zurich).
+# OpenSky from *some* runner IPs but not others (~33% hit-rate observed).
+# We race 5 parallel attempts; any one succeeding is enough since the
+# Supabase write is an idempotent upsert on (bbox).
 
 on:
   schedule:
@@ -15,19 +17,42 @@ concurrency:
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 4
+    strategy:
+      fail-fast: false
+      matrix:
+        attempt: [1, 2, 3, 4, 5]
+    continue-on-error: true   # one bad-IP runner shouldn't fail the whole run
     steps:
       - uses: actions/checkout@v4
 
+      - name: Show runner IP (debug)
+        run: echo "Runner public IP $(curl -sS -m 5 -4 https://ifconfig.io || echo unknown)"
+
+      - name: Probe OpenSky reachability (fast fail)
+        id: probe
+        run: |
+          if curl -sS -m 8 -o /dev/null "https://opensky-network.org/api/states/all?lamin=46&lomin=6&lamax=47&lomax=7"; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            echo "OpenSky reachable from this runner"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Runner Azure IP blocked by OpenSky — skipping enrichment"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.probe.outputs.ok == 'true'
         with:
           python-version: "3.12"
           cache: "pip"
           cache-dependency-path: fetcher/requirements.txt
 
-      - run: pip install -r fetcher/requirements.txt
+      - name: Install deps
+        if: steps.probe.outputs.ok == 'true'
+        run: pip install -r fetcher/requirements.txt
 
       - name: Run fetcher
+        if: steps.probe.outputs.ok == 'true'
         env:
           OPENSKY_CLIENT_ID: ${{ secrets.OPENSKY_CLIENT_ID }}
           OPENSKY_CLIENT_SECRET: ${{ secrets.OPENSKY_CLIENT_SECRET }}
