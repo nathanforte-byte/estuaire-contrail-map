@@ -100,13 +100,13 @@ async def flights():
 
 @app.get("/api/trajectories")
 async def trajectories(hours: int = 24):
-    """GeoJSON FeatureCollection: one LineString per icao24 over the last N hours.
-    Only persistent-risk positions are stored, so every line drawn here is a
-    persistent-contrail track.
+    """GeoJSON FeatureCollection: real flight tracks (from OpenSky /tracks)
+    for every icao24 we flagged as persistent in the lookback window.
+    Populated daily by the .github/workflows/daily-trajectories.yml cron.
     """
     if not SUPABASE_URL or not SUPABASE_ANON_KEY:
         raise HTTPException(500, "Supabase env vars missing on Vercel")
-    hours = max(1, min(hours, 168))  # clamp to [1h, 7d]
+    hours = max(1, min(hours, 168))  # [1h, 7d]
 
     cache_key = f"traj:{hours}"
     cached = _cached(cache_key, SNAPSHOT_TTL)
@@ -118,11 +118,11 @@ async def trajectories(hours: int = 24):
     cutoff = quote((datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat())
 
     url = (
-        f"{SUPABASE_URL}/rest/v1/flight_positions"
-        f"?ts=gte.{cutoff}"
-        f"&order=icao24,ts"
-        f"&select=icao24,callsign,country,ts,lat,lon,alt_ft"
-        f"&limit=50000"
+        f"{SUPABASE_URL}/rest/v1/flight_trajectories"
+        f"?fetched_at=gte.{cutoff}"
+        f"&order=fetched_at.desc"
+        f"&select=icao24,callsign,country,origin_icao,destination_icao,start_ts,end_ts,waypoints"
+        f"&limit=2000"
     )
     headers = {
         "apikey": SUPABASE_ANON_KEY,
@@ -137,26 +137,25 @@ async def trajectories(hours: int = 24):
     except httpx.HTTPError as e:
         raise HTTPException(502, f"Supabase upstream: {type(e).__name__}: {e!r}") from e
 
-    # Group rows into LineStrings per icao24.
-    by_icao: dict[str, list[dict]] = {}
-    for row in rows:
-        by_icao.setdefault(row["icao24"], []).append(row)
-
     features = []
-    for icao24, pts in by_icao.items():
-        if len(pts) < 2:
-            continue  # a LineString needs ≥ 2 points
-        coords = [[p["lon"], p["lat"]] for p in pts]
+    for row in rows:
+        wps = row.get("waypoints") or []
+        # Drop on-ground waypoints to avoid taxi/ramp segments dominating the line.
+        coords = [[w["lon"], w["lat"]] for w in wps if not w.get("on_ground")]
+        if len(coords) < 2:
+            continue
         features.append({
             "type": "Feature",
             "geometry": {"type": "LineString", "coordinates": coords},
             "properties": {
-                "icao24": icao24,
-                "callsign": pts[-1].get("callsign"),
-                "country": pts[-1].get("country"),
-                "points": len(pts),
-                "first_ts": pts[0]["ts"],
-                "last_ts": pts[-1]["ts"],
+                "icao24": row["icao24"],
+                "callsign": row.get("callsign"),
+                "country": row.get("country"),
+                "origin_icao": row.get("origin_icao"),
+                "destination_icao": row.get("destination_icao"),
+                "points": len(coords),
+                "start_ts": row.get("start_ts"),
+                "end_ts": row.get("end_ts"),
             },
         })
 
@@ -165,7 +164,6 @@ async def trajectories(hours: int = 24):
         "features": features,
         "hours": hours,
         "track_count": len(features),
-        "raw_position_count": len(rows),
     }
     _store(cache_key, payload)
     return payload

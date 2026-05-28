@@ -1,0 +1,61 @@
+name: daily-trajectories
+
+# Daily snapshot of real OpenSky tracks for icao24s flagged "persistent" in the
+# preceding 24 h. Runs at 06:00 UTC so all of yesterday's flights have been
+# batched by OpenSky's nightly process.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: daily-trajectories
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        attempt: [1, 2, 3, 4, 5]
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show runner IP
+        run: echo "Runner IP $(curl -sS -m 5 -4 https://ifconfig.io || echo unknown)"
+
+      - name: Probe OpenSky reachability (fast fail)
+        id: probe
+        run: |
+          if curl -sS -m 8 -o /dev/null "https://opensky-network.org/api/states/all?lamin=46&lomin=6&lamax=47&lomax=7"; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Runner Azure IP blocked by OpenSky — skipping"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.probe.outputs.ok == 'true'
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: fetcher/requirements.txt
+
+      - name: Install deps
+        if: steps.probe.outputs.ok == 'true'
+        run: pip install -r fetcher/requirements.txt
+
+      - name: Run trajectories fetcher
+        if: steps.probe.outputs.ok == 'true'
+        env:
+          OPENSKY_CLIENT_ID: ${{ secrets.OPENSKY_CLIENT_ID }}
+          OPENSKY_CLIENT_SECRET: ${{ secrets.OPENSKY_CLIENT_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          LOOKBACK_HOURS: "24"
+          CONCURRENCY: "6"
+        run: python fetcher/fetch_trajectories.py
