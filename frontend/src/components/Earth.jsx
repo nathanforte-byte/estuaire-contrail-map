@@ -120,19 +120,20 @@ export default function Earth({ flights = [], trajectories = [] }) {
         pointAltitude={(f) => RISK_ALT[f.risk] ?? RISK_ALT.unknown}
         pointRadius={(f) => RISK_RADIUS[f.risk] ?? RISK_RADIUS.unknown}
         pointsMerge={true}
-        /* Real trajectories — full, static. A gentle gradient fades the
-           start (origin, older signal) and brightens toward the current
-           tip — so direction reads without motion. */
+        /* Real trajectories — the 24 h "trail" view. Rendered in atmospheric
+           blue so they read as historical context, while the rose dots above
+           remain "right now". Gradient fades the origin and brightens toward
+           the current tip — where the rose dot sits. */
         pathsData={trajectories}
         pathPoints={(t) => t.coords}
         pathPointLat={(p) => p[1]}
         pathPointLng={(p) => p[0]}
         pathPointAlt={0.05}
         pathColor={() => [
-          "rgba(255, 77, 109, 0.18)",
-          "rgba(255, 77, 109, 0.85)",
+          "rgba(92, 161, 255, 0.10)",
+          "rgba(92, 161, 255, 0.78)",
         ]}
-        pathStroke={1.2}
+        pathStroke={1.1}
         pathTransitionDuration={0}
       />
     </div>

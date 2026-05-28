@@ -1,7 +1,8 @@
 const RISKS = [
-  { key: "persistent", label: "Persistent contrail (ISSR)", color: "#ff4d6d" },
-  { key: "short", label: "Short-lived", color: "#e0a14a" },
-  { key: "none", label: "No formation", color: "#6aa9c2" },
+  { key: "persistent", label: "Persistent contrail · now", color: "#ff4d6d", shape: "dot" },
+  { key: "trail",      label: "Persistent trail · 24 h",   color: "#5ca1ff", shape: "line" },
+  { key: "short",      label: "Short-lived",               color: "#e0a14a", shape: "dot" },
+  { key: "none",       label: "No formation",              color: "#6aa9c2", shape: "dot" },
 ];
 
 export default function HeaderPanel({ snapshot, viewMode, setViewMode }) {
@@ -41,10 +42,17 @@ export default function HeaderPanel({ snapshot, viewMode, setViewMode }) {
       <ul className="mb-4 flex flex-col gap-[6px]">
         {RISKS.map((r) => (
           <li key={r.key} className="flex items-center gap-[10px] text-[12px] text-[#a0aac3]">
-            <span
-              className="size-[9px] flex-shrink-0 rounded-full"
-              style={{ background: r.color, boxShadow: `0 0 12px ${r.color}, 0 0 2px ${r.color}` }}
-            />
+            {r.shape === "line" ? (
+              <span
+                className="h-[2px] w-[12px] flex-shrink-0 rounded-full"
+                style={{ background: r.color, boxShadow: `0 0 6px ${r.color}` }}
+              />
+            ) : (
+              <span
+                className="size-[9px] flex-shrink-0 rounded-full"
+                style={{ background: r.color, boxShadow: `0 0 12px ${r.color}, 0 0 2px ${r.color}` }}
+              />
+            )}
             {r.label}
           </li>
         ))}
