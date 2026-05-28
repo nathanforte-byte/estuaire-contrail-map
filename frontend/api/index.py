@@ -2,7 +2,13 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 import time
+
+# Vercel runs this file via its own entrypoint, so the api/ dir isn't on sys.path.
+# Add it so the sibling modules (contrail, opensky, weather) resolve.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import httpx
 from fastapi import FastAPI, HTTPException
