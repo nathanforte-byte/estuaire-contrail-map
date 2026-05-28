@@ -9,7 +9,7 @@ export default function HeaderPanel({ snapshot }) {
   return (
     <aside
       className="
-        glass absolute left-5 top-5 z-20 w-[min(360px,calc(100vw-40px))]
+        glass w-[min(360px,calc(100vw-32px))]
         rounded-2xl px-5 pb-5 pt-[18px]
         animate-in fade-in slide-in-from-top-2 duration-500
       "

@@ -58,7 +58,7 @@ export default function FiltersPanel({ flights, trajectories, filters, setFilter
   return (
     <aside
       className="
-        glass absolute bottom-5 left-5 z-20 flex max-h-[60vh] w-[min(320px,calc(100vw-40px))]
+        glass flex max-h-[calc(100vh-260px)] w-[min(320px,calc(100vw-32px))]
         flex-col overflow-hidden rounded-2xl
         animate-in fade-in slide-in-from-bottom-2 duration-500
       "

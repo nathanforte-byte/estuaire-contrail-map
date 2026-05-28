@@ -91,15 +91,49 @@ export default function App() {
         "
       />
 
-      <HeaderPanel snapshot={snapshot} />
-      <StatsPanel counts={counts} ready={!!snapshot} />
-      <FiltersPanel
-        flights={flights}
-        trajectories={trajectories}
-        filters={filters}
-        setFilters={setFilters}
-      />
-      <GatePanel />
+      {/* UI overlay as a CSS Grid — guarantees the 4 corner panels never
+          overlap, regardless of how tall any of them grows. Middle row is
+          1fr so the globe stays visible through the center. */}
+      <div
+        className="
+          pointer-events-none fixed inset-0 z-10
+          grid grid-cols-1 sm:grid-cols-2
+          grid-rows-[auto_1fr_auto] gap-4 p-4 sm:gap-5 sm:p-5
+          [&>*]:pointer-events-auto
+        "
+      >
+        {/* Top-left */}
+        <div className="self-start justify-self-start max-w-full">
+          <HeaderPanel snapshot={snapshot} />
+        </div>
+        {/* Top-right */}
+        <div className="self-start justify-self-end hidden sm:block">
+          <StatsPanel counts={counts} ready={!!snapshot} />
+        </div>
+
+        {/* Middle row left as empty 1fr so panels can't grow into each other */}
+        <div className="hidden sm:block" />
+        <div className="hidden sm:block" />
+
+        {/* Bottom-left */}
+        <div className="self-end justify-self-start max-w-full">
+          <FiltersPanel
+            flights={flights}
+            trajectories={trajectories}
+            filters={filters}
+            setFilters={setFilters}
+          />
+        </div>
+        {/* Bottom-right */}
+        <div className="self-end justify-self-end max-w-full">
+          <GatePanel />
+        </div>
+      </div>
+
+      {/* Floating mobile-only mini stats (since the top-right slot is hidden on sm-) */}
+      <div className="sm:hidden">
+        <StatsPanel counts={counts} ready={!!snapshot} />
+      </div>
 
       <div className="mono pointer-events-none fixed bottom-2 left-1/2 z-30 -translate-x-1/2 text-[10px] tracking-[0.18em] text-[#3a4256]">
         OPENSKY · OPEN-METEO · NATURAL EARTH · BUILT BY ESTUAIRE

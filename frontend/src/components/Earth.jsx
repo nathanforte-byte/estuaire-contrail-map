@@ -97,8 +97,11 @@ export default function Earth({ persistentFlights = [], trajectories = [] }) {
         pointAltitude={0.012}
         pointRadius={0.22}
         pointsMerge={true}
-        /* Real trajectories — lifted into the atmosphere with a flowing dash
-           pattern so they read as "in-flight motion" without rotating anything. */
+        /* Real trajectories — lifted into the atmosphere with a single
+           gradient band that slides slowly along the trajectory. The band
+           itself is rendered by the `pathColor` gradient inside the dash;
+           a long gap (~88%) means only ~12% of the line is visible at a
+           time, which IS the band. Slow dash-cycle makes it crawl. */
         pathsData={trajectories}
         pathPoints={(t) => t.coords}
         pathPointLat={(p) => p[1]}
@@ -106,15 +109,18 @@ export default function Earth({ persistentFlights = [], trajectories = [] }) {
         pathPointAlt={0.05}
         pathColor={() => [
           "rgba(255, 77, 109, 0)",
-          "rgba(255, 77, 109, 0.95)",
-          "rgba(255, 77, 109, 0.95)",
+          "rgba(255, 105, 130, 0.45)",
+          "rgba(255, 130, 152, 0.95)",
+          "rgba(255, 105, 130, 0.45)",
           "rgba(255, 77, 109, 0)",
         ]}
         pathStroke={1.4}
-        pathDashLength={0.28}
-        pathDashGap={0.06}
-        pathDashAnimateTime={5500}
-        pathDashInitialGap={(t) => (t.icao24 ? t.icao24.charCodeAt(0) / 256 : 0)}
+        pathDashLength={0.12}
+        pathDashGap={0.88}
+        pathDashAnimateTime={12000}
+        pathDashInitialGap={(t) =>
+          t.icao24 ? (parseInt(t.icao24.slice(-3), 16) % 100) / 100 : 0
+        }
         pathTransitionDuration={0}
       />
     </div>

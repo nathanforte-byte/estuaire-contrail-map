@@ -20,7 +20,7 @@ export default function StatsPanel({ counts, ready }) {
   return (
     <aside
       className="
-        glass absolute right-5 top-5 z-20 min-w-[240px] rounded-2xl
+        glass min-w-[240px] rounded-2xl
         animate-in fade-in slide-in-from-top-2 duration-500
       "
     >

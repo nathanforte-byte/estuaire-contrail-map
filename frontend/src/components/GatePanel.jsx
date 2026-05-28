@@ -15,7 +15,7 @@ export default function GatePanel() {
   return (
     <aside
       className="
-        glass absolute bottom-5 right-5 z-20 w-[min(320px,calc(100vw-40px))]
+        glass w-[min(320px,calc(100vw-32px))]
         rounded-2xl px-5 pb-[18px] pt-4
         animate-in fade-in slide-in-from-bottom-2 duration-500
       "
