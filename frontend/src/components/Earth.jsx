@@ -14,25 +14,12 @@ import * as THREE from "three";
  *   - persistent flights → `pointsData`
  *   - trajectories       → `pathsData` (one polyline per icao24)
  */
-// Risk colour palette — drives both the legend in HeaderPanel and the markers.
-const RISK_COLOR = {
-  persistent: "#ff4d6d",
-  short: "#e0a14a",
-  none: "#6aa9c2",
-  unknown: "#5b6472",
-};
-const RISK_RADIUS = {
-  persistent: 0.22,
-  short: 0.12,
-  none: 0.07,
-  unknown: 0.06,
-};
-const RISK_ALT = {
-  persistent: 0.012,
-  short: 0.006,
-  none: 0.003,
-  unknown: 0.003,
-};
+// Binary visual encoding:
+//  - flights forming a persistent contrail right now → hot rose, big, lifted
+//  - every other airborne flight                    → pale blue, tiny, near-surface
+const COLOR_HOT = "#ff4d6d";
+const COLOR_COLD = "#a8d2ff";
+const isPersistent = (f) => f.risk === "persistent";
 
 export default function Earth({ flights = [], trajectories = [] }) {
   const globeRef = useRef(null);
@@ -109,16 +96,14 @@ export default function Earth({ flights = [], trajectories = [] }) {
         hexPolygonMargin={0.35}
         hexPolygonUseDots={true}
         hexPolygonColor={() => "rgba(170, 200, 235, 0.85)"}
-        /* Flights — color, radius, and altitude scale with contrail risk so
-           persistent (the hero signal) is bigger / brighter / lifted highest.
-           When the user switches to "persistent only", the parent App passes
-           a filtered list. */
+        /* All flights — binary encoding: hot rose for the ones forming a
+           persistent contrail right now, pale blue for everything else. */
         pointsData={flights}
         pointLat="lat"
         pointLng="lon"
-        pointColor={(f) => RISK_COLOR[f.risk] || RISK_COLOR.unknown}
-        pointAltitude={(f) => RISK_ALT[f.risk] ?? RISK_ALT.unknown}
-        pointRadius={(f) => RISK_RADIUS[f.risk] ?? RISK_RADIUS.unknown}
+        pointColor={(f) => (isPersistent(f) ? COLOR_HOT : COLOR_COLD)}
+        pointAltitude={(f) => (isPersistent(f) ? 0.012 : 0.0025)}
+        pointRadius={(f) => (isPersistent(f) ? 0.2 : 0.05)}
         pointsMerge={true}
         /* Real trajectories — the 24 h "trail" view. Rendered in atmospheric
            blue so they read as historical context, while the rose dots above

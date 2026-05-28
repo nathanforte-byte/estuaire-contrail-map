@@ -1,11 +1,10 @@
 const RISKS = [
-  { key: "persistent", label: "Persistent contrail · now", color: "#ff4d6d", shape: "dot" },
-  { key: "trail",      label: "Persistent trail · 24 h",   color: "#5ca1ff", shape: "line" },
-  { key: "short",      label: "Short-lived",               color: "#e0a14a", shape: "dot" },
-  { key: "none",       label: "No formation",              color: "#6aa9c2", shape: "dot" },
+  { key: "persistent", label: "Forming persistent contrail · now", color: "#ff4d6d", shape: "dot" },
+  { key: "trail",      label: "Persistent trail · last 24 h",      color: "#5ca1ff", shape: "line" },
+  { key: "other",      label: "Other airborne flights",            color: "#a8d2ff", shape: "dot" },
 ];
 
-export default function HeaderPanel({ snapshot, viewMode, setViewMode }) {
+export default function HeaderPanel({ snapshot }) {
   const live = !!snapshot;
   return (
     <aside
@@ -39,7 +38,7 @@ export default function HeaderPanel({ snapshot, viewMode, setViewMode }) {
         long-lived contrail cirrus.
       </p>
 
-      <ul className="mb-4 flex flex-col gap-[6px]">
+      <ul className="flex flex-col gap-[6px]">
         {RISKS.map((r) => (
           <li key={r.key} className="flex items-center gap-[10px] text-[12px] text-[#a0aac3]">
             {r.shape === "line" ? (
@@ -58,39 +57,7 @@ export default function HeaderPanel({ snapshot, viewMode, setViewMode }) {
         ))}
       </ul>
 
-      <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
-
       <style>{`@keyframes ping{75%,100%{transform:scale(2.4);opacity:0}}`}</style>
     </aside>
-  );
-}
-
-function ViewModeToggle({ viewMode, setViewMode }) {
-  const opts = [
-    { key: "persistent", label: "Persistent only" },
-    { key: "all", label: "All flights" },
-  ];
-  return (
-    <div className="rounded-full border border-white/8 bg-black/30 p-[3px] grid grid-cols-2 gap-[2px]">
-      {opts.map((o) => {
-        const active = viewMode === o.key;
-        return (
-          <button
-            key={o.key}
-            type="button"
-            onClick={() => setViewMode(o.key)}
-            className={
-              "rounded-full px-3 py-[5px] text-[11px] font-medium tracking-[-0.005em] " +
-              "transition-all duration-200 active:scale-[0.96] " +
-              (active
-                ? "bg-white/10 text-[#edeffd] shadow-[inset_0_1px_0_rgb(255_255_255_/_0.12),inset_0_-1px_0_rgb(0_0_0_/_0.25)]"
-                : "text-[#7b9cda] hover:text-[#cfd9ff]")
-            }
-          >
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
   );
 }
