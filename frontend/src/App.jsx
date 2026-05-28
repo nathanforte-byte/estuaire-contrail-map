@@ -97,7 +97,7 @@ export default function App() {
     <>
       <div className="canvas-shell">
         <Canvas
-          camera={{ position: [0, 0.6, 3.4], fov: 35, near: 0.1, far: 100 }}
+          camera={{ position: [2.5, 1.9, -0.5], fov: 35, near: 0.1, far: 100 }}
           dpr={[1, 2]}
           gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
           onCreated={({ gl, scene }) => {
@@ -107,9 +107,8 @@ export default function App() {
             scene.background = new THREE.Color("#03050a");
           }}
         >
-          {/* Sun-like key light: warm, single-source. Earth shaders blend day/night. */}
-          <ambientLight intensity={0.05} />
-          <directionalLight position={[5, 2, 5]} intensity={1.7} color="#fff5e1" />
+          {/* Pure data-driven scene — meshBasicMaterial / shaderMaterial don't react to lights. */}
+          <ambientLight intensity={0.5} />
 
           <Suspense fallback={null}>
             <group rotation={[0, 0, THREE.MathUtils.degToRad(-23.5)]}>
@@ -118,7 +117,7 @@ export default function App() {
               <Trajectories tracks={filteredTrajectories} />
               <Flights flights={filteredFlights} />
             </group>
-            <Stars radius={120} depth={50} count={5500} factor={5} saturation={0} fade speed={0.6} />
+            <Stars radius={120} depth={50} count={4500} factor={4} saturation={0} fade speed={0.5} />
             <Preload all />
           </Suspense>
 
@@ -129,8 +128,6 @@ export default function App() {
             maxDistance={8}
             zoomSpeed={0.6}
             rotateSpeed={0.4}
-            autoRotate
-            autoRotateSpeed={0.14}
             enableDamping
             dampingFactor={0.06}
           />

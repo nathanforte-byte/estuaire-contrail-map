@@ -1,126 +1,271 @@
-import { useRef } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTexture } from "@react-three/drei";
 import * as THREE from "three";
 
 import { EARTH_RADIUS } from "../lib/geo.js";
 
 /**
- * Earth = textured sphere with day map, night-lights overlay blended by the
- * surface lighting, plus a topology-derived bump map for relief.
+ * Earth (plexus / data-constellation style).
  *
- * Textures are NASA Blue Marble / Black Marble derived, served from the
- * three-globe community library (MIT) at /public/textures so we don't depend
- * on any CDN. Three sources we use:
- *   - earth-blue-marble.jpg  (~5 MB)  → day diffuse
- *   - earth-night.jpg        (~3 MB)  → night-lights emissive
- *   - earth-topology.png     (~1 MB)  → bump (height-derived)
+ * No photographic textures. Instead:
+ *   1. A near-invisible inner sphere acts as the silhouette + occluder so
+ *      flights on the back side don't bleed through.
+ *   2. A second sphere runs an edge-detect shader on the land/water mask to
+ *      glow thin white-cyan continent outlines.
+ *   3. A points cloud, sampled from the same mask at a regular lat/lon grid,
+ *      fills every continent with a uniform grid of luminous data dots.
  *
- * We use a shader-material to blend day/night based on the dot product of the
- * surface normal and the light direction — that's what gives the smooth
- * terminator on the globe.
+ * Mask source: `earth-water.png` (three-globe) — white = water, black = land.
  */
-const EARTH_VERTEX_SHADER = /* glsl */ `
+const OUTLINE_VERTEX = /* glsl */ `
 varying vec2 vUv;
 varying vec3 vNormal;
-varying vec3 vWorldPos;
-
 void main() {
   vUv = uv;
   vNormal = normalize(normalMatrix * normal);
-  vec4 worldPos = modelMatrix * vec4(position, 1.0);
-  vWorldPos = worldPos.xyz;
-  gl_Position = projectionMatrix * viewMatrix * worldPos;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `;
 
-const EARTH_FRAGMENT_SHADER = /* glsl */ `
-uniform sampler2D dayMap;
-uniform sampler2D nightMap;
-uniform sampler2D bumpMap;
-uniform vec3 sunDir;
-
+const OUTLINE_FRAGMENT = /* glsl */ `
+uniform sampler2D landMask;
+uniform vec2 maskSize;
 varying vec2 vUv;
 varying vec3 vNormal;
-varying vec3 vWorldPos;
 
 void main() {
-  vec3 day = texture2D(dayMap, vUv).rgb;
-  vec3 night = texture2D(nightMap, vUv).rgb;
-  float bump = texture2D(bumpMap, vUv).r;
+  vec2 px = 1.0 / maskSize;
 
-  // Cosine of angle between surface normal and the sun direction.
-  // > 0: lit side, < 0: dark side. Smoothstep around the terminator.
-  float cosA = dot(normalize(vNormal), normalize(sunDir));
-  float dayMix = smoothstep(-0.12, 0.18, cosA);
+  // Sample 4-neighbours for a cheap Sobel-ish edge.
+  float c  = texture2D(landMask, vUv).r;
+  float l  = texture2D(landMask, vUv - vec2(px.x, 0.0)).r;
+  float r  = texture2D(landMask, vUv + vec2(px.x, 0.0)).r;
+  float u  = texture2D(landMask, vUv - vec2(0.0, px.y)).r;
+  float d  = texture2D(landMask, vUv + vec2(0.0, px.y)).r;
+  // Diagonals for thicker, smoother coastlines
+  float ul = texture2D(landMask, vUv - vec2(px.x, px.y)).r;
+  float ur = texture2D(landMask, vUv + vec2(px.x, -px.y)).r;
+  float dl = texture2D(landMask, vUv + vec2(-px.x, px.y)).r;
+  float dr = texture2D(landMask, vUv + vec2(px.x, px.y)).r;
 
-  // Subtle terminator warmth (sunset glow) on the edge between day and night.
-  float terminator = 1.0 - abs(cosA);
-  vec3 sunsetTint = vec3(1.0, 0.45, 0.18) * pow(max(terminator - 0.6, 0.0), 2.0) * 0.5;
+  float edge = abs(c - l) + abs(c - r) + abs(c - u) + abs(c - d)
+             + 0.5 * (abs(c - ul) + abs(c - ur) + abs(c - dl) + abs(c - dr));
+  float outline = smoothstep(0.18, 0.55, edge);
 
-  // Boost night map a touch + clip oceans (they're near-black, no city lights).
-  vec3 nightBoosted = night * 2.2;
-  nightBoosted = clamp(nightBoosted, 0.0, 1.0);
+  // Slight rim darkening so the outline fades at extreme grazing angles.
+  float face = max(dot(normalize(vNormal), vec3(0.0, 0.0, 1.0)), 0.0);
+  float rim = smoothstep(0.0, 0.25, face);
 
-  // Land bump → slight diffuse darkening so mountains show up.
-  float relief = mix(0.85, 1.05, bump);
+  vec3 base = vec3(0.92, 0.97, 1.0);
+  vec3 cyan = vec3(0.46, 0.78, 1.0);
+  vec3 col = mix(base, cyan, 0.35);
 
-  vec3 finalColor = mix(nightBoosted, day * relief, dayMix) + sunsetTint;
-
-  // Add a hint of atmospheric haze at grazing angles to soften the silhouette.
-  float fresnel = pow(1.0 - max(dot(normalize(vNormal), vec3(0.0, 0.0, 1.0)), 0.0), 2.5);
-  finalColor += vec3(0.08, 0.18, 0.32) * fresnel * 0.15;
-
-  gl_FragColor = vec4(finalColor, 1.0);
+  gl_FragColor = vec4(col * outline * rim, outline * rim);
 }
 `;
 
 export default function Earth() {
-  const meshRef = useRef();
+  const [mask] = useTexture(["/textures/earth-water.png"]);
+  mask.colorSpace = THREE.NoColorSpace;
+  mask.minFilter = THREE.LinearFilter;
+  mask.magFilter = THREE.LinearFilter;
+  mask.anisotropy = 4;
 
-  // Three textures from /public/textures (see scripts/fetch-textures).
-  const [dayMap, nightMap, bumpMap] = useTexture([
-    "/textures/earth-blue-marble.jpg",
-    "/textures/earth-night.jpg",
-    "/textures/earth-topology.png",
-  ]);
+  const uniforms = useMemo(
+    () => ({
+      landMask: { value: mask },
+      maskSize: { value: new THREE.Vector2(2048, 1024) },
+    }),
+    [mask],
+  );
 
-  // Make sure colorspaces are right for the shader.
-  dayMap.colorSpace = THREE.SRGBColorSpace;
-  nightMap.colorSpace = THREE.SRGBColorSpace;
-  bumpMap.colorSpace = THREE.NoColorSpace;
-  [dayMap, nightMap, bumpMap].forEach((t) => {
-    t.anisotropy = 8;
-    t.minFilter = THREE.LinearMipMapLinearFilter;
-    t.magFilter = THREE.LinearFilter;
-  });
-
-  // Sun direction in world space. The directional light is at (5, 2, 5);
-  // shader needs the normalized direction TOWARDS the light.
-  const uniforms = useRef({
-    dayMap: { value: dayMap },
-    nightMap: { value: nightMap },
-    bumpMap: { value: bumpMap },
-    sunDir: { value: new THREE.Vector3(5, 2, 5).normalize() },
-  });
-
-  // Earth slowly rotates around its tilted axis. Cumulative — independent
-  // of the OrbitControls autoRotate (which moves the camera, not the globe).
-  useFrame((_, delta) => {
-    if (meshRef.current) {
-      meshRef.current.rotation.y += delta * 0.018;
+  // Update mask size once the image is actually loaded.
+  useEffect(() => {
+    if (mask.image) {
+      uniforms.maskSize.value.set(mask.image.width, mask.image.height);
     }
-  });
+  }, [mask, uniforms]);
 
   return (
-    <mesh ref={meshRef}>
-      <sphereGeometry args={[EARTH_RADIUS, 96, 96]} />
+    <group>
+      {/* Solid occluder so back-side flights don't bleed through */}
+      <mesh>
+        <sphereGeometry args={[EARTH_RADIUS * 0.995, 64, 64]} />
+        <meshBasicMaterial color="#020306" />
+      </mesh>
+
+      {/* Equator + meridian grid (very faint) */}
+      <Grid radius={EARTH_RADIUS * 1.0005} />
+
+      {/* Land dots */}
+      <LandDots mask={mask} />
+
+      {/* Continent outlines */}
+      <mesh>
+        <sphereGeometry args={[EARTH_RADIUS * 1.002, 256, 256]} />
+        <shaderMaterial
+          uniforms={uniforms}
+          vertexShader={OUTLINE_VERTEX}
+          fragmentShader={OUTLINE_FRAGMENT}
+          transparent
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+function LandDots({ mask }) {
+  const [data, setData] = useState(null);
+  const meshRef = useRef();
+
+  // Sample the land mask once it loads. Land = mask < threshold (white = water).
+  useEffect(() => {
+    const img = mask.image;
+    if (!img) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0);
+    const pixels = ctx.getImageData(0, 0, img.width, img.height).data;
+
+    // 1.4° lat × 1.4° lon = ~26 000 samples → ~10 000 land hits
+    const STEP_LAT = 1.4;
+    const STEP_LON = 1.4;
+    const out = [];
+
+    for (let lat = -82; lat <= 82; lat += STEP_LAT) {
+      for (let lon = -180; lon < 180; lon += STEP_LON) {
+        const u = (lon + 180) / 360;
+        const v = 1 - (lat + 90) / 180;
+        const px = Math.min(Math.floor(u * img.width), img.width - 1);
+        const py = Math.min(Math.floor(v * img.height), img.height - 1);
+        const idx = (py * img.width + px) * 4;
+        const r = pixels[idx];
+        // Mask is white-on-water: land where pixel is dark.
+        if (r < 120) {
+          const phi = (lat * Math.PI) / 180;
+          const theta = (lon * Math.PI) / 180;
+          const radius = EARTH_RADIUS * 1.003;
+          const x = radius * Math.cos(phi) * Math.cos(theta);
+          const z = -radius * Math.cos(phi) * Math.sin(theta);
+          const y = radius * Math.sin(phi);
+          out.push(x, y, z);
+        }
+      }
+    }
+
+    setData(new Float32Array(out));
+  }, [mask]);
+
+  if (!data || data.length === 0) return null;
+
+  return (
+    <points ref={meshRef} frustumCulled={false}>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          args={[data, 3]}
+          count={data.length / 3}
+          array={data}
+          itemSize={3}
+        />
+      </bufferGeometry>
       <shaderMaterial
-        attach="material"
-        uniforms={uniforms.current}
-        vertexShader={EARTH_VERTEX_SHADER}
-        fragmentShader={EARTH_FRAGMENT_SHADER}
+        vertexShader={DOT_VERTEX}
+        fragmentShader={DOT_FRAGMENT}
+        transparent
+        depthWrite={false}
       />
-    </mesh>
+    </points>
+  );
+}
+
+const DOT_VERTEX = /* glsl */ `
+varying float vFacing;
+void main() {
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  // Compare the world-space normal (= normalized position) against the camera
+  // direction so we can fade out dots that wrap to the far side of the globe.
+  vec3 worldNormal = normalize((modelMatrix * vec4(position, 0.0)).xyz);
+  vec3 camDir = normalize(cameraPosition - (modelMatrix * vec4(position, 1.0)).xyz);
+  vFacing = max(dot(worldNormal, camDir), 0.0);
+
+  gl_Position = projectionMatrix * mv;
+  gl_PointSize = 2.1;
+}
+`;
+
+const DOT_FRAGMENT = /* glsl */ `
+varying float vFacing;
+void main() {
+  // Disc with soft edge
+  vec2 c = gl_PointCoord - vec2(0.5);
+  float d = length(c);
+  if (d > 0.5) discard;
+  float a = smoothstep(0.5, 0.2, d);
+  // Fade back side
+  float facing = smoothstep(0.05, 0.55, vFacing);
+  vec3 col = mix(vec3(0.45, 0.75, 1.0), vec3(0.85, 0.95, 1.0), facing);
+  gl_FragColor = vec4(col, a * facing * 0.95);
+}
+`;
+
+/**
+ * Subtle latitude/longitude grid — wireframe sphere drawn as lines at every
+ * 30°. Keeps the data-globe legibility without overwhelming the dots.
+ */
+function Grid({ radius }) {
+  const { geometry } = useMemo(() => {
+    const positions = [];
+
+    // Parallels (constant lat)
+    for (let lat = -60; lat <= 60; lat += 30) {
+      const segs = 96;
+      for (let i = 0; i < segs; i++) {
+        const lon1 = (-180 + (i / segs) * 360);
+        const lon2 = (-180 + ((i + 1) / segs) * 360);
+        pushLatLon(positions, lat, lon1, radius);
+        pushLatLon(positions, lat, lon2, radius);
+      }
+    }
+    // Meridians (constant lon)
+    for (let lon = -150; lon <= 180; lon += 30) {
+      const segs = 64;
+      for (let i = 0; i < segs; i++) {
+        const lat1 = -85 + (i / segs) * 170;
+        const lat2 = -85 + ((i + 1) / segs) * 170;
+        pushLatLon(positions, lat1, lon, radius);
+        pushLatLon(positions, lat2, lon, radius);
+      }
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    return { geometry: geom };
+  }, [radius]);
+
+  const material = useMemo(
+    () =>
+      new THREE.LineBasicMaterial({
+        color: 0x223044,
+        transparent: true,
+        opacity: 0.32,
+        depthWrite: false,
+      }),
+    [],
+  );
+
+  return <lineSegments geometry={geometry} material={material} frustumCulled={false} />;
+}
+
+function pushLatLon(arr, lat, lon, radius) {
+  const phi = (lat * Math.PI) / 180;
+  const theta = (lon * Math.PI) / 180;
+  arr.push(
+    radius * Math.cos(phi) * Math.cos(theta),
+    radius * Math.sin(phi),
+    -radius * Math.cos(phi) * Math.sin(theta),
   );
 }
