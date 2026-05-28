@@ -172,3 +172,36 @@ async def trajectories(hours: int = 24):
 @app.get("/api/health")
 def health() -> dict:
     return {"ok": True, "service": "estuaire-contrail-map"}
+
+
+@app.get("/api/probe-adsb")
+async def probe_adsb():
+    """Temporary diagnostic: can the Vercel function reach api.adsb.lol?
+    Returns the round-trip timing + first-flight sample so we know if the data
+    quality is usable. Delete once we've decided whether to migrate.
+    """
+    import time as _t
+    t0 = _t.time()
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            r = await client.get("https://api.adsb.lol/v2/lat/50/lon/10/dist/1500")
+            r.raise_for_status()
+            data = r.json()
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e!r}", "elapsed_s": round(_t.time() - t0, 2)}
+
+    acs = data.get("ac") or []
+    airborne = [a for a in acs if a.get("lat") and a.get("lon") and a.get("alt_baro") not in (None, "ground")]
+    with_oat = sum(1 for a in airborne if a.get("oat") is not None)
+    sample = None
+    if airborne:
+        a = airborne[0]
+        sample = {k: a.get(k) for k in ("hex", "flight", "r", "t", "alt_baro", "gs", "oat", "lat", "lon", "category")}
+    return {
+        "ok": True,
+        "elapsed_s": round(_t.time() - t0, 2),
+        "total_ac": len(acs),
+        "airborne_with_pos": len(airborne),
+        "with_oat_pct": round(100 * with_oat / max(len(airborne), 1)),
+        "sample": sample,
+    }
