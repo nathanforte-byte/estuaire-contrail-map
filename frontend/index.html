@@ -76,6 +76,7 @@
 
 <div class="panel top-right">
   <div class="stat"><b id="count-total">—</b> flights · <b id="count-persistent">—</b> forming persistent trails</div>
+  <div class="stat" style="margin-top:4px"><b id="count-tracks">—</b> persistent tracks · last 24 h</div>
 </div>
 
 <div class="panel bottom-right gate">
@@ -131,6 +132,26 @@
   });
 
   map.on("load", () => {
+    // Persistent-contrail trajectories over the last N hours (background layer).
+    map.addSource("trajectories", { type: "geojson", data: emptyFC() });
+    map.addLayer({
+      id: "trajectories-line",
+      type: "line",
+      source: "trajectories",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#ff3b6b",
+        "line-opacity": 0.45,
+        "line-width": [
+          "interpolate", ["linear"], ["zoom"],
+          3, 0.8,
+          6, 1.5,
+          10, 2.5,
+        ],
+        "line-blur": 0.3,
+      },
+    });
+
     map.addSource("flights", { type: "geojson", data: emptyFC() });
 
     // Glow halo for persistent (the hero signal)
@@ -191,7 +212,9 @@
     map.on("mouseleave", "flights-dot", () => map.getCanvas().style.cursor = "");
 
     refresh();
+    refreshTrajectories();
     setInterval(refresh, 15000);
+    setInterval(refreshTrajectories, 120000);   // tracks change slowly, 2 min is plenty
   });
 
   function emptyFC() {
@@ -218,6 +241,19 @@
       document.getElementById("count-persistent").textContent = persistent.toLocaleString();
     } catch (e) {
       console.warn("refresh failed", e);
+    }
+  }
+
+  async function refreshTrajectories() {
+    try {
+      const r = await fetch(`${API_BASE}/api/trajectories?hours=24`);
+      if (!r.ok) throw new Error("upstream");
+      const fc = await r.json();
+      map.getSource("trajectories").setData(fc);
+      const el = document.getElementById("count-tracks");
+      if (el) el.textContent = (fc.track_count || 0).toLocaleString();
+    } catch (e) {
+      console.warn("trajectories refresh failed", e);
     }
   }
 

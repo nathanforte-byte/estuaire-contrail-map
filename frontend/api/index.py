@@ -98,6 +98,79 @@ async def flights():
     return payload
 
 
+@app.get("/api/trajectories")
+async def trajectories(hours: int = 24):
+    """GeoJSON FeatureCollection: one LineString per icao24 over the last N hours.
+    Only persistent-risk positions are stored, so every line drawn here is a
+    persistent-contrail track.
+    """
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        raise HTTPException(500, "Supabase env vars missing on Vercel")
+    hours = max(1, min(hours, 168))  # clamp to [1h, 7d]
+
+    cache_key = f"traj:{hours}"
+    cached = _cached(cache_key, SNAPSHOT_TTL)
+    if cached is not None:
+        return JSONResponse(cached)
+
+    from datetime import datetime, timedelta, timezone
+    from urllib.parse import quote
+    cutoff = quote((datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat())
+
+    url = (
+        f"{SUPABASE_URL}/rest/v1/flight_positions"
+        f"?ts=gte.{cutoff}"
+        f"&order=icao24,ts"
+        f"&select=icao24,callsign,country,ts,lat,lon,alt_ft"
+        f"&limit=50000"
+    )
+    headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            r = await client.get(url, headers=headers)
+            r.raise_for_status()
+            rows = r.json()
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Supabase upstream: {type(e).__name__}: {e!r}") from e
+
+    # Group rows into LineStrings per icao24.
+    by_icao: dict[str, list[dict]] = {}
+    for row in rows:
+        by_icao.setdefault(row["icao24"], []).append(row)
+
+    features = []
+    for icao24, pts in by_icao.items():
+        if len(pts) < 2:
+            continue  # a LineString needs ≥ 2 points
+        coords = [[p["lon"], p["lat"]] for p in pts]
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": coords},
+            "properties": {
+                "icao24": icao24,
+                "callsign": pts[-1].get("callsign"),
+                "country": pts[-1].get("country"),
+                "points": len(pts),
+                "first_ts": pts[0]["ts"],
+                "last_ts": pts[-1]["ts"],
+            },
+        })
+
+    payload = {
+        "type": "FeatureCollection",
+        "features": features,
+        "hours": hours,
+        "track_count": len(features),
+        "raw_position_count": len(rows),
+    }
+    _store(cache_key, payload)
+    return payload
+
+
 @app.get("/api/health")
 def health() -> dict:
     return {"ok": True, "service": "estuaire-contrail-map"}
