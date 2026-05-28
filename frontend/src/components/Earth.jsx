@@ -14,7 +14,27 @@ import * as THREE from "three";
  *   - persistent flights → `pointsData`
  *   - trajectories       → `pathsData` (one polyline per icao24)
  */
-export default function Earth({ persistentFlights = [], trajectories = [] }) {
+// Risk colour palette — drives both the legend in HeaderPanel and the markers.
+const RISK_COLOR = {
+  persistent: "#ff4d6d",
+  short: "#e0a14a",
+  none: "#6aa9c2",
+  unknown: "#5b6472",
+};
+const RISK_RADIUS = {
+  persistent: 0.22,
+  short: 0.12,
+  none: 0.07,
+  unknown: 0.06,
+};
+const RISK_ALT = {
+  persistent: 0.012,
+  short: 0.006,
+  none: 0.003,
+  unknown: 0.003,
+};
+
+export default function Earth({ flights = [], trajectories = [] }) {
   const globeRef = useRef(null);
   const wrapperRef = useRef(null);
   const [countries, setCountries] = useState(null);
@@ -89,13 +109,16 @@ export default function Earth({ persistentFlights = [], trajectories = [] }) {
         hexPolygonMargin={0.35}
         hexPolygonUseDots={true}
         hexPolygonColor={() => "rgba(170, 200, 235, 0.85)"}
-        /* Persistent contrail flights */
-        pointsData={persistentFlights}
+        /* Flights — color, radius, and altitude scale with contrail risk so
+           persistent (the hero signal) is bigger / brighter / lifted highest.
+           When the user switches to "persistent only", the parent App passes
+           a filtered list. */
+        pointsData={flights}
         pointLat="lat"
         pointLng="lon"
-        pointColor={() => "#ff4d6d"}
-        pointAltitude={0.012}
-        pointRadius={0.22}
+        pointColor={(f) => RISK_COLOR[f.risk] || RISK_COLOR.unknown}
+        pointAltitude={(f) => RISK_ALT[f.risk] ?? RISK_ALT.unknown}
+        pointRadius={(f) => RISK_RADIUS[f.risk] ?? RISK_RADIUS.unknown}
         pointsMerge={true}
         /* Real trajectories — full, static. A gentle gradient fades the
            start (origin, older signal) and brightens toward the current

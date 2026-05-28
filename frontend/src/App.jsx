@@ -43,6 +43,9 @@ export default function App() {
     airports: new Set(),
     aircraftTypes: new Set(),
   });
+  // 'persistent' = only red contrail markers (default, on-message)
+  // 'all'        = every airborne flight, color-coded by contrail risk
+  const [viewMode, setViewMode] = useState("persistent");
 
   const flights = useMemo(() => {
     if (!snapshot?.flights) return [];
@@ -67,6 +70,10 @@ export default function App() {
     [filteredFlights],
   );
 
+  // What we actually feed to the globe depends on the view mode.
+  const visibleFlights =
+    viewMode === "all" ? filteredFlights : persistentFlights;
+
   const counts = useMemo(
     () => ({
       total: filteredFlights.length,
@@ -80,7 +87,7 @@ export default function App() {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-black text-white">
       {/* Globe occupies the full canvas behind the panels */}
-      <Earth persistentFlights={persistentFlights} trajectories={filteredTracks} />
+      <Earth flights={visibleFlights} trajectories={filteredTracks} />
 
       {/* Soft halo at the bottom — picks up the mockup's stage glow */}
       <div
@@ -104,7 +111,11 @@ export default function App() {
       >
         {/* Top-left */}
         <div className="self-start justify-self-start max-w-full">
-          <HeaderPanel snapshot={snapshot} />
+          <HeaderPanel
+            snapshot={snapshot}
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+          />
         </div>
         {/* Top-right */}
         <div className="self-start justify-self-end hidden sm:block">
