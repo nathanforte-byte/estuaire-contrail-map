@@ -1,115 +1,115 @@
-import createGlobe from "cobe";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Globe from "react-globe.gl";
+import * as THREE from "three";
 
 /**
- * Earth — small WebGL globe via `cobe`. Auto-rotates slowly, markers fed from
- * outside (persistent-contrail flights only).
+ * Earth — react-globe.gl dashboard map.
  *
- * Cobe is ~3.5KB; it draws a dotted earth + bright markers + glow in one
- * canvas pass. We center the camera around Europe (theta=0.35, initial phi
- * picks up roughly +10° longitude).
+ * Visual style: dotted continents on near-black sphere, blue atmospheric
+ * halo, single hot accent for persistent contrail flights, glow path lines
+ * for the 24 h trajectory backlog.
+ *
+ *   - dotted continents: hexPolygons from Natural Earth 110m countries
+ *   - static, centered on Europe (no auto-rotate, user can still drag)
+ *   - persistent flights → `pointsData`
+ *   - trajectories       → `pathsData` (one polyline per icao24)
  */
-export default function Earth({ markers = [] }) {
-  const canvasRef = useRef(null);
-  const phiRef = useRef(0);
-  const pointerRef = useRef({ x: 0 });
-  const pointerStartRef = useRef(null);
-  const offsetRef = useRef(0);
+export default function Earth({ persistentFlights = [], trajectories = [] }) {
+  const globeRef = useRef(null);
+  const wrapperRef = useRef(null);
+  const [countries, setCountries] = useState(null);
+  const [size, setSize] = useState({ w: 800, h: 800 });
 
-  // Holding the latest markers in a ref so onRender can read them without
-  // restarting the globe on every snapshot.
-  const markersRef = useRef(markers);
+  // Material is constant, build it once.
+  const globeMaterial = useMemo(
+    () =>
+      new THREE.MeshPhongMaterial({
+        color: new THREE.Color("#040810"),
+        emissive: new THREE.Color("#020409"),
+        emissiveIntensity: 1,
+        shininess: 0,
+      }),
+    [],
+  );
+
+  // Resize observer — react-globe.gl needs explicit width/height.
   useEffect(() => {
-    markersRef.current = markers;
-  }, [markers]);
-
-  useEffect(() => {
-    if (!canvasRef.current) return;
-
-    let width = 0;
-    const onResize = () => {
-      width = canvasRef.current?.offsetWidth ?? 0;
-    };
-    onResize();
-    window.addEventListener("resize", onResize);
-
-    const globe = createGlobe(canvasRef.current, {
-      devicePixelRatio: 2,
-      width: width * 2,
-      height: width * 2,
-      phi: 0,
-      theta: 0.32,
-      dark: 1,
-      diffuse: 1.2,
-      mapSamples: 16000,
-      mapBrightness: 6,
-      // Blue/black aesthetic to match the stage glow.
-      baseColor: [0.18, 0.22, 0.32],
-      markerColor: [1, 0.34, 0.45],
-      glowColor: [0.2, 0.45, 1],
-      markers: markersRef.current,
-      opacity: 1,
-      offset: [0, 0],
-      onRender: (state) => {
-        // Slow continuous rotation centered around Europe.
-        state.phi = -2.1 + phiRef.current + offsetRef.current;
-        phiRef.current += 0.0035;
-        state.markers = markersRef.current;
-        state.width = width * 2;
-        state.height = width * 2;
-      },
+    if (!wrapperRef.current) return;
+    const obs = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      setSize({ w: Math.max(320, width), h: Math.max(320, height) });
     });
-
-    requestAnimationFrame(() => {
-      if (canvasRef.current) canvasRef.current.style.opacity = "1";
-    });
-
-    // Drag to spin further (no library, just track x deltas).
-    const el = canvasRef.current;
-    const onDown = (e) => {
-      pointerStartRef.current = e.clientX || e.touches?.[0].clientX;
-      el.style.cursor = "grabbing";
-    };
-    const onMove = (e) => {
-      if (pointerStartRef.current == null) return;
-      const x = e.clientX || e.touches?.[0].clientX;
-      const delta = (x - pointerStartRef.current) / 150;
-      offsetRef.current = delta * Math.PI;
-    };
-    const onUp = () => {
-      if (pointerStartRef.current == null) return;
-      // Bake the drag into phi so the next drag continues from the new pos.
-      phiRef.current += offsetRef.current;
-      offsetRef.current = 0;
-      pointerStartRef.current = null;
-      el.style.cursor = "grab";
-    };
-    el.addEventListener("pointerdown", onDown);
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-
-    return () => {
-      globe.destroy();
-      window.removeEventListener("resize", onResize);
-      el.removeEventListener("pointerdown", onDown);
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
+    obs.observe(wrapperRef.current);
+    return () => obs.disconnect();
   }, []);
 
+  // Country polygons for the dotted continents look. Cached by the browser.
+  useEffect(() => {
+    fetch("/data/countries-110m.geojson", { cache: "force-cache" })
+      .then((r) => r.json())
+      .then((d) => setCountries(d.features))
+      .catch((e) => console.warn("countries load failed", e));
+  }, []);
+
+  // Hard-lock the camera on Europe + disable auto-rotate.
+  useEffect(() => {
+    const g = globeRef.current;
+    if (!g) return;
+    g.pointOfView({ lat: 48, lng: 12, altitude: 1.9 }, 0);
+    const ctrl = g.controls();
+    ctrl.autoRotate = false;
+    ctrl.enableZoom = true;
+    ctrl.minDistance = 180;
+    ctrl.maxDistance = 600;
+    ctrl.enableDamping = true;
+    ctrl.dampingFactor = 0.07;
+  }, [countries]);
+
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[640px]">
-      <canvas
-        ref={canvasRef}
-        style={{
-          width: "100%",
-          height: "100%",
-          opacity: 0,
-          transition: "opacity 1.2s ease",
-          cursor: "grab",
-          touchAction: "none",
-          contain: "layout paint size",
+    <div ref={wrapperRef} className="absolute inset-0">
+      <Globe
+        ref={globeRef}
+        width={size.w}
+        height={size.h}
+        backgroundColor="rgba(0,0,0,0)"
+        animateIn={false}
+        rendererConfig={{
+          antialias: true,
+          alpha: true,
+          powerPreference: "high-performance",
         }}
+        globeMaterial={globeMaterial}
+        showGlobe
+        showAtmosphere
+        atmosphereColor="#3273ff"
+        atmosphereAltitude={0.18}
+        /* Dotted continents */
+        hexPolygonsData={countries || []}
+        hexPolygonResolution={3}
+        hexPolygonMargin={0.35}
+        hexPolygonUseDots={true}
+        hexPolygonColor={() => "rgba(170, 200, 235, 0.85)"}
+        /* Persistent contrail flights */
+        pointsData={persistentFlights}
+        pointLat="lat"
+        pointLng="lon"
+        pointColor={() => "#ff4d6d"}
+        pointAltitude={0.012}
+        pointRadius={0.22}
+        pointsMerge={true}
+        /* Real trajectories from /api/trajectories */
+        pathsData={trajectories}
+        pathPoints={(t) => t.coords}
+        pathPointLat={(p) => p[1]}
+        pathPointLng={(p) => p[0]}
+        pathPointAlt={0.0035}
+        pathColor={() => [
+          "rgba(255, 77, 109, 0)",
+          "rgba(255, 77, 109, 0.85)",
+          "rgba(255, 77, 109, 0)",
+        ]}
+        pathStroke={0.6}
+        pathTransitionDuration={0}
       />
     </div>
   );

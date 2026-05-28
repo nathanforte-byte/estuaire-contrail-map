@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import Earth from "./components/Earth.jsx";
-import Sparkles from "./components/Sparkles.jsx";
-import StatsLine from "./components/StatsLine.jsx";
-import GateBand from "./components/GateBand.jsx";
+import HeaderPanel from "./components/HeaderPanel.jsx";
+import StatsPanel from "./components/StatsPanel.jsx";
+import FiltersPanel from "./components/FiltersPanel.jsx";
+import GatePanel from "./components/GatePanel.jsx";
+import { callsignToAirline } from "./lib/icao.js";
 
 const API_BASE = ""; // same-origin in prod, Vite proxy in dev
 
@@ -18,7 +20,7 @@ function useApi(path, intervalMs) {
         const j = await r.json();
         if (!cancelled) setData(j);
       } catch {
-        /* keep last good */
+        /* keep last good payload */
       } finally {
         if (!cancelled) timer = setTimeout(tick, intervalMs);
       }
@@ -34,76 +36,85 @@ function useApi(path, intervalMs) {
 
 export default function App() {
   const snapshot = useApi("/api/flights", 30000);
+  const trajectoriesData = useApi("/api/trajectories?hours=24", 180000);
 
-  const { markers, total, persistent } = useMemo(() => {
-    const flights = (snapshot?.flights || []).filter(
-      (f) => f.lat != null && f.lon != null,
-    );
-    const persistentFlights = flights.filter((f) => f.risk === "persistent");
-    // Cobe takes [{ location: [lat, lon], size }]. We only feed persistent
-    // contrail flights so the globe reads as "where contrails form right now".
-    return {
-      total: flights.length,
-      persistent: persistentFlights.length,
-      markers: persistentFlights.map((f) => ({
-        location: [f.lat, f.lon],
-        size: 0.045,
-      })),
-    };
+  const [filters, setFilters] = useState({
+    airlines: new Set(),
+    airports: new Set(),
+    aircraftTypes: new Set(),
+  });
+
+  const flights = useMemo(() => {
+    if (!snapshot?.flights) return [];
+    return snapshot.flights
+      .filter((f) => f.lat != null && f.lon != null)
+      .map((f) => ({ ...f, airline: callsignToAirline(f.callsign) }));
   }, [snapshot]);
+
+  const trajectories = useMemo(() => {
+    if (!trajectoriesData?.features) return [];
+    return trajectoriesData.features.map((ft) => ({
+      ...ft.properties,
+      airline: callsignToAirline(ft.properties.callsign),
+      coords: ft.geometry.coordinates,
+    }));
+  }, [trajectoriesData]);
+
+  const filteredFlights = useMemo(() => apply(flights, filters, false), [flights, filters]);
+  const filteredTracks = useMemo(() => apply(trajectories, filters, true), [trajectories, filters]);
+  const persistentFlights = useMemo(
+    () => filteredFlights.filter((f) => f.risk === "persistent"),
+    [filteredFlights],
+  );
+
+  const counts = useMemo(
+    () => ({
+      total: filteredFlights.length,
+      persistent: persistentFlights.length,
+      tracks: filteredTracks.length,
+      fetchedAt: snapshot?.fetched_at,
+    }),
+    [filteredFlights, persistentFlights, filteredTracks, snapshot],
+  );
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-black text-white">
-      <article className="relative z-10 grid gap-5 pt-12 text-center">
-        <span className="mx-auto inline-block w-fit rounded-full border border-[#3273ff] bg-[#0f1c35] px-3 py-1 text-sm font-medium tracking-[-0.005em] text-[#cfd9ff]">
-          Live · {snapshot ? "scanning European airspace" : "connecting…"}
-        </span>
+      {/* Globe occupies the full canvas behind the panels */}
+      <Earth persistentFlights={persistentFlights} trajectories={filteredTracks} />
 
-        <h1 className="bg-gradient-to-b from-[#edeffd] to-[#7b9cda] bg-clip-text text-4xl font-semibold leading-[100%] tracking-tighter text-transparent md:text-6xl">
-          Where contrails are forming
-          <br />
-          over Europe — right now.
-        </h1>
-
-        <StatsLine
-          total={total}
-          persistent={persistent}
-          fetchedAt={snapshot?.fetched_at}
-        />
-
-        <Earth markers={markers} />
-      </article>
-
-      {/* Stage: radial glow + curved horizon ring + sparkles */}
+      {/* Soft halo at the bottom — picks up the mockup's stage glow */}
       <div
         className="
-          relative -mt-32 h-80 w-screen overflow-hidden
-          [mask-image:radial-gradient(50%_50%,white,transparent)]
-          before:absolute before:inset-0
-          before:bg-[radial-gradient(circle_at_bottom_center,#3273ff,transparent_90%)]
-          before:opacity-40
-          after:absolute after:-left-1/2 after:top-1/2
-          after:aspect-[1/0.7] after:w-[200%]
-          after:rounded-[10%] after:border-t after:border-[#163474]
-          after:bg-[#08132b]
+          pointer-events-none fixed inset-x-0 bottom-0 h-[40vh]
+          bg-[radial-gradient(80%_60%_at_50%_100%,#0a1f4a_0%,transparent_70%)]
+          opacity-60
         "
-      >
-        <Sparkles
-          density={800}
-          speed={1.2}
-          size={1.2}
-          direction="top"
-          opacitySpeed={2}
-          color="#32A7FF"
-          className="absolute inset-x-0 bottom-0 h-full w-full"
-        />
-      </div>
+      />
 
-      <GateBand />
+      <HeaderPanel snapshot={snapshot} />
+      <StatsPanel counts={counts} ready={!!snapshot} />
+      <FiltersPanel
+        flights={flights}
+        trajectories={trajectories}
+        filters={filters}
+        setFilters={setFilters}
+      />
+      <GatePanel />
 
       <div className="mono pointer-events-none fixed bottom-2 left-1/2 z-30 -translate-x-1/2 text-[10px] tracking-[0.18em] text-[#3a4256]">
         OPENSKY · OPEN-METEO · NATURAL EARTH · BUILT BY ESTUAIRE
       </div>
     </div>
   );
+}
+
+function apply(items, filters, useOrigin) {
+  const { airlines: ai, airports: ap, aircraftTypes: ty } = filters;
+  if (!ai.size && !ap.size && !ty.size) return items;
+  return items.filter((it) => {
+    if (ai.size && !ai.has(it.airline)) return false;
+    if (useOrigin && ap.size && !ap.has(it.origin_icao)) return false;
+    if (ty.size && !ty.has(it.aircraft_type)) return false;
+    return true;
+  });
 }
