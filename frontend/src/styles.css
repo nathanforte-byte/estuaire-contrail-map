@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Geist", "SF Pro Display", -apple-system, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-stage: #08132b;
+  --color-stage-edge: #163474;
+  --color-glow: #3273ff;
+  --color-spark: #32a7ff;
+  --color-ink-soft: #7b9cda;
+  --color-ink-bright: #edeffd;
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+  html,
+  body,
+  #root {
+    margin: 0;
+    height: 100%;
+    background: #000;
+    color: #fff;
+    font-family: var(--font-display);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  button {
+    font-family: inherit;
+    cursor: pointer;
+  }
+}
+
+@layer utilities {
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
