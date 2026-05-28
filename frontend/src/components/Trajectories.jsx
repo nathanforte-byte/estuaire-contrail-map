@@ -27,16 +27,16 @@ export default function Trajectories({ tracks }) {
     });
   }, [tracks]);
 
-  // Single shared material — additive red glow.
+  // Single shared material — additive rose glow.
   const material = useMemo(
     () =>
       new THREE.LineBasicMaterial({
-        color: new THREE.Color("#ff2a5b"),
+        color: new THREE.Color("#d63556"),
         transparent: true,
-        opacity: 0.55,
+        opacity: 0.5,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
-        linewidth: 1, // ignored on most platforms but kept for clarity
+        linewidth: 1,
       }),
     [],
   );

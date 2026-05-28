@@ -1,11 +1,12 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 // Vercel's Python runtime serves /api/* via the api/ directory; Vite only
 // builds the static + JS bundle. The dev proxy below lets `vite dev` hit a
 // local uvicorn on :8000 while looking same-origin.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
     proxy: {

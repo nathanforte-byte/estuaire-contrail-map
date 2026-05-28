@@ -5,10 +5,10 @@ import * as THREE from "three";
 import { latLonToVec3, altFtToOffset } from "../lib/geo.js";
 
 const RISK_COLOR = {
-  persistent: new THREE.Color("#ff2a5b"),
-  short: new THREE.Color("#ffb547"),
-  none: new THREE.Color("#4cc9f0"),
-  unknown: new THREE.Color("#7a8aa0"),
+  persistent: new THREE.Color("#d63556"),
+  short: new THREE.Color("#b88336"),
+  none: new THREE.Color("#5896b3"),
+  unknown: new THREE.Color("#5b6472"),
 };
 
 /**
@@ -83,7 +83,7 @@ export default function Flights({ flights }) {
           </bufferGeometry>
           <pointsMaterial
             size={24}
-            color="#ff2a5b"
+            color="#d63556"
             transparent
             opacity={0.4}
             sizeAttenuation={false}

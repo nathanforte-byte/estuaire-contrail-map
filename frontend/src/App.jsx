@@ -1,5 +1,6 @@
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Stars, Preload } from "@react-three/drei";
+import { AnimatePresence, motion } from "framer-motion";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
 
@@ -12,6 +13,7 @@ import HeaderPanel from "./components/HeaderPanel.jsx";
 import StatsPanel from "./components/StatsPanel.jsx";
 import FiltersPanel from "./components/FiltersPanel.jsx";
 import GatePanel from "./components/GatePanel.jsx";
+import LoadingScene from "./components/LoadingScene.jsx";
 
 import { callsignToAirline } from "./lib/icao.js";
 
@@ -19,7 +21,6 @@ const API_BASE = ""; // same-origin in prod, Vite proxy in dev
 
 function useApi(path, intervalMs) {
   const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
   useEffect(() => {
     let cancelled = false;
     let timer;
@@ -28,12 +29,9 @@ function useApi(path, intervalMs) {
         const r = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
         if (!r.ok) throw new Error(`http ${r.status}`);
         const j = await r.json();
-        if (!cancelled) {
-          setData(j);
-          setError(null);
-        }
-      } catch (e) {
-        if (!cancelled) setError(e);
+        if (!cancelled) setData(j);
+      } catch {
+        /* keep last good payload */
       } finally {
         if (!cancelled) timer = setTimeout(tick, intervalMs);
       }
@@ -44,12 +42,12 @@ function useApi(path, intervalMs) {
       if (timer) clearTimeout(timer);
     };
   }, [path, intervalMs]);
-  return { data, error };
+  return data;
 }
 
 export default function App() {
-  const { data: snapshot } = useApi("/api/flights", 30000);
-  const { data: trajectoriesData } = useApi("/api/trajectories?hours=24", 180000);
+  const snapshot = useApi("/api/flights", 30000);
+  const trajectoriesData = useApi("/api/trajectories?hours=24", 180000);
 
   const [filters, setFilters] = useState({
     airlines: new Set(),
@@ -57,7 +55,6 @@ export default function App() {
     aircraftTypes: new Set(),
   });
 
-  // Enrich snapshot flights with airline code.
   const flights = useMemo(() => {
     if (!snapshot?.flights) return [];
     return snapshot.flights
@@ -70,32 +67,29 @@ export default function App() {
     return trajectoriesData.features.map((ft) => ({
       ...ft.properties,
       airline: callsignToAirline(ft.properties.callsign),
-      coords: ft.geometry.coordinates, // [[lon,lat], …]
+      coords: ft.geometry.coordinates,
     }));
   }, [trajectoriesData]);
 
-  // Apply filters in-memory.
-  const filteredFlights = useMemo(() => filterAll(flights, filters, false), [flights, filters]);
-  const filteredTrajectories = useMemo(
-    () => filterAll(trajectories, filters, true),
-    [trajectories, filters],
-  );
+  const filteredFlights = useMemo(() => applyFilters(flights, filters, false), [flights, filters]);
+  const filteredTracks = useMemo(() => applyFilters(trajectories, filters, true), [trajectories, filters]);
 
   const counts = useMemo(() => {
     const persistent = filteredFlights.filter((f) => f.risk === "persistent").length;
     return {
       total: filteredFlights.length,
       persistent,
-      tracks: filteredTrajectories.length,
+      tracks: filteredTracks.length,
       fetchedAt: snapshot?.fetched_at,
     };
-  }, [filteredFlights, filteredTrajectories, snapshot]);
+  }, [filteredFlights, filteredTracks, snapshot]);
 
   const ready = !!snapshot;
 
   return (
     <>
-      <div className="canvas-shell">
+      {/* Canvas: 3D scene */}
+      <div className="fixed inset-0">
         <Canvas
           camera={{ position: [2.5, 1.9, -0.5], fov: 35, near: 0.1, far: 100 }}
           dpr={[1, 2]}
@@ -104,17 +98,16 @@ export default function App() {
             gl.outputColorSpace = THREE.SRGBColorSpace;
             gl.toneMapping = THREE.ACESFilmicToneMapping;
             gl.toneMappingExposure = 1.05;
-            scene.background = new THREE.Color("#03050a");
+            scene.background = new THREE.Color("#070910");
           }}
         >
-          {/* Pure data-driven scene — meshBasicMaterial / shaderMaterial don't react to lights. */}
           <ambientLight intensity={0.5} />
 
           <Suspense fallback={null}>
             <group rotation={[0, 0, THREE.MathUtils.degToRad(-23.5)]}>
               <Earth />
               <Atmosphere />
-              <Trajectories tracks={filteredTrajectories} />
+              <Trajectories tracks={filteredTracks} />
               <Flights flights={filteredFlights} />
             </group>
             <Stars radius={120} depth={50} count={4500} factor={4} saturation={0} fade speed={0.5} />
@@ -134,9 +127,10 @@ export default function App() {
         </Canvas>
       </div>
 
-      <div className="ui-overlay">
+      {/* UI Overlay — pointer-events:none on container; children opt in */}
+      <div className="pointer-events-none fixed inset-0 z-10 [&>*]:pointer-events-auto">
         <HeaderPanel />
-        <StatsPanel counts={counts} />
+        <StatsPanel counts={counts} ready={ready} />
         <FiltersPanel
           flights={flights}
           trajectories={trajectories}
@@ -146,19 +140,19 @@ export default function App() {
         <GatePanel />
       </div>
 
-      <div className="attribution mono">
-        OPENSKY · OPEN-METEO · NASA BLUE MARBLE · BUILT BY ESTUAIRE
+      {/* Footer attribution */}
+      <div className="pointer-events-none fixed bottom-2 left-1/2 z-5 -translate-x-1/2 text-[10px] tracking-[0.18em] mono text-[var(--color-ink-3)]">
+        OPENSKY · OPEN-METEO · NATURAL EARTH · BUILT BY ESTUAIRE
       </div>
 
-      <div className={`loading-shroud ${ready ? "hidden" : ""}`}>
-        <div className="pulse">Scanning European airspace…</div>
-      </div>
+      {/* Skeletal loading overlay (fades out once first snapshot arrives) */}
+      <AnimatePresence>{!ready && <LoadingScene />}</AnimatePresence>
     </>
   );
 }
 
-function filterAll(items, filters, useOrigin) {
-  const ai = filters.airlines, ap = filters.airports, ty = filters.aircraftTypes;
+function applyFilters(items, filters, useOrigin) {
+  const { airlines: ai, airports: ap, aircraftTypes: ty } = filters;
   if (!ai.size && !ap.size && !ty.size) return items;
   return items.filter((it) => {
     if (ai.size && !ai.has(it.airline)) return false;
