@@ -86,6 +86,19 @@ class _TokenCache:
 _tokens = _TokenCache()
 
 
+def _client_kwargs() -> dict:
+    """httpx AsyncClient kwargs. Routes through a proxy when OPENSKY_PROXY_URL is set.
+
+    OpenSky blacklists most cloud-provider egress ranges (GCP, AWS-East confirmed),
+    so on serverless infra we tunnel through a residential proxy (Bright Data).
+    """
+    proxy = os.getenv("OPENSKY_PROXY_URL")
+    kwargs: dict = {"timeout": 30.0}
+    if proxy:
+        kwargs["proxy"] = proxy
+    return kwargs
+
+
 def _parse_state(s: list) -> Flight | None:
     try:
         lon, lat = s[5], s[6]
@@ -107,26 +120,43 @@ def _parse_state(s: list) -> Flight | None:
 
 
 async def fetch_states(bbox: tuple[float, float, float, float] = EUROPE_BBOX) -> list[Flight]:
-    """Fetch live states inside a bbox. Returns airborne flights only."""
+    """Fetch live states inside a bbox. Returns airborne flights only.
+
+    If OPENSKY_WORKER_URL is set, we route through our Cloudflare Worker proxy
+    (which handles OAuth and lives on Cloudflare's egress, not blacklisted by
+    OpenSky). Otherwise we call OpenSky directly with OAuth2 — only viable from
+    non-cloud egress (local dev).
+    """
     lamin, lomin, lamax, lomax = bbox
     params = {"lamin": lamin, "lomin": lomin, "lamax": lamax, "lomax": lomax}
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        headers: dict[str, str] = {}
-        token = await _tokens.get(client)
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-
-        r = await client.get(f"{OPENSKY_BASE}/states/all", params=params, headers=headers)
-        if r.status_code == 401 and token:
-            # Token might have just expired; force a refresh and retry once.
-            _tokens._expires_at = 0.0
+    worker_url = os.getenv("OPENSKY_WORKER_URL")
+    if worker_url:
+        worker_key = os.getenv("OPENSKY_WORKER_KEY", "")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            r = await client.get(
+                f"{worker_url.rstrip('/')}/states/all",
+                params=params,
+                headers={"x-proxy-key": worker_key} if worker_key else {},
+            )
+            r.raise_for_status()
+            data = r.json()
+    else:
+        async with httpx.AsyncClient(**_client_kwargs()) as client:
+            headers: dict[str, str] = {}
             token = await _tokens.get(client)
             if token:
                 headers["Authorization"] = f"Bearer {token}"
-                r = await client.get(f"{OPENSKY_BASE}/states/all", params=params, headers=headers)
-        r.raise_for_status()
-        data = r.json()
+
+            r = await client.get(f"{OPENSKY_BASE}/states/all", params=params, headers=headers)
+            if r.status_code == 401 and token:
+                _tokens._expires_at = 0.0
+                token = await _tokens.get(client)
+                if token:
+                    headers["Authorization"] = f"Bearer {token}"
+                    r = await client.get(f"{OPENSKY_BASE}/states/all", params=params, headers=headers)
+            r.raise_for_status()
+            data = r.json()
 
     states: Iterable[list] = data.get("states") or []
     flights: list[Flight] = []

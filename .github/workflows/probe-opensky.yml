@@ -1,0 +1,60 @@
+name: probe-opensky
+
+# One-shot connectivity probe: does GitHub Actions egress (Azure) reach OpenSky?
+# Manually triggered via `gh workflow run probe-opensky.yml`.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show runner public IP
+        run: |
+          echo "Public IPv4: $(curl -sS -4 https://ifconfig.io || echo unknown)"
+
+      - name: TCP-level probe to OpenSky (no auth)
+        run: |
+          echo "--- curl /api/states/all anonymous (no auth) ---"
+          curl -sS -m 30 -o /tmp/anon.json \
+            -w "code=%{http_code} time=%{time_total} dns=%{time_namelookup} connect=%{time_connect}\n" \
+            "https://opensky-network.org/api/states/all?lamin=46&lomin=6&lamax=47&lomax=7" || true
+          echo "first 200 chars:"
+          head -c 200 /tmp/anon.json || true
+          echo ""
+
+      - name: OAuth2 token request
+        env:
+          OPENSKY_CLIENT_ID: ${{ secrets.OPENSKY_CLIENT_ID }}
+          OPENSKY_CLIENT_SECRET: ${{ secrets.OPENSKY_CLIENT_SECRET }}
+        run: |
+          echo "--- token request ---"
+          curl -sS -m 30 -o /tmp/token.json \
+            -w "code=%{http_code} time=%{time_total}\n" \
+            -X POST 'https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token' \
+            -H 'content-type: application/x-www-form-urlencoded' \
+            --data-urlencode "grant_type=client_credentials" \
+            --data-urlencode "client_id=$OPENSKY_CLIENT_ID" \
+            --data-urlencode "client_secret=$OPENSKY_CLIENT_SECRET" || true
+          if grep -q access_token /tmp/token.json 2>/dev/null; then
+            echo "TOKEN_OK"
+          else
+            echo "TOKEN_FAIL — body (first 200):"
+            head -c 200 /tmp/token.json || true
+            exit 1
+          fi
+
+      - name: Authed call to /states/all
+        env:
+          OPENSKY_CLIENT_ID: ${{ secrets.OPENSKY_CLIENT_ID }}
+          OPENSKY_CLIENT_SECRET: ${{ secrets.OPENSKY_CLIENT_SECRET }}
+        run: |
+          TOKEN=$(python3 -c "import json; print(json.load(open('/tmp/token.json'))['access_token'])")
+          echo "--- /states/all with bearer ---"
+          curl -sS -m 30 -o /tmp/states.json \
+            -w "code=%{http_code} time=%{time_total}\n" \
+            -H "Authorization: Bearer $TOKEN" \
+            "https://opensky-network.org/api/states/all?lamin=46&lomin=6&lamax=47&lomax=7"
+          echo "states count:"
+          python3 -c "import json; d=json.load(open('/tmp/states.json')); print(len(d.get('states') or []))"
