@@ -5,7 +5,6 @@ import asyncio
 import time
 
 import httpx
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -13,8 +12,6 @@ from fastapi.responses import JSONResponse
 from contrail import classify
 from opensky import EUROPE_BBOX, Flight, fetch_states
 from weather import WeatherSample, altitude_to_pressure_hpa, fetch_weather_at
-
-load_dotenv()
 
 app = FastAPI(title="Estuaire — Live Contrail Map")
 
