@@ -44,6 +44,36 @@ cd frontend && python -m http.server 5173
 # ouvrir http://localhost:5173
 ```
 
+## Deploy
+
+### Backend → Railway
+1. Push the repo to GitHub.
+2. Railway → **New Project → Deploy from GitHub repo**, select this repo.
+3. In service settings:
+   - **Root Directory**: `backend`
+   - **Watch Paths**: `backend/**`
+   - Variables: `OPENSKY_USER`, `OPENSKY_PASS` (optional but recommended — raises rate limit 10×)
+4. Railway auto-detects Nixpacks (Python) from `requirements.txt` and uses `railway.json` / `Procfile` for start.
+5. Generate a public domain in *Settings → Networking* (e.g. `estuaire-backend.up.railway.app`).
+6. Smoke test: `curl https://<your-railway-domain>/api/health`.
+
+### Frontend → Vercel
+1. Edit [frontend/vercel.json](frontend/vercel.json) — replace `REPLACE_ME.up.railway.app` with the Railway domain from step 5 above.
+2. Vercel → **Add New Project → Import GitHub repo**.
+3. In project settings:
+   - **Root Directory**: `frontend`
+   - **Framework Preset**: Other (static)
+   - **Build Command**: *(empty)*
+   - **Output Directory**: `.`
+4. Deploy. The Vercel rewrite forwards `/api/*` to Railway → no CORS, no client-side URL juggling.
+5. Optional: add a custom domain (e.g. `contrails.estuaire.io`).
+
+### After deploy — narrow CORS (optional but tidy)
+With the Vercel rewrite, the browser only ever calls same-origin, so `allow_origins=["*"]` is harmless. Still, you can narrow it in [backend/main.py](backend/main.py):
+```python
+allow_origins=["https://contrails.estuaire.io", "https://<your-vercel>.vercel.app"]
+```
+
 ## Roadmap
 - v0 : Europe, snapshot toutes les 10s, 3 buckets de risque
 - v0.1 : forecast 1h (où vont-ils former des traînées ?)
