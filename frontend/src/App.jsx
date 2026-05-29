@@ -82,14 +82,21 @@ export default function App() {
       {/* Globe occupies the full canvas behind the panels */}
       <Earth flights={filteredFlights} trajectories={filteredTracks} />
 
-      {/* Soft halo at the bottom — picks up the mockup's stage glow */}
-      <div
-        className="
-          pointer-events-none fixed inset-x-0 bottom-0 h-[40vh]
-          bg-[radial-gradient(80%_60%_at_50%_100%,#0a1f4a_0%,transparent_70%)]
-          opacity-60
-        "
-      />
+      {/* Ambient corner glows — give the backdrop-filter something to chew on
+          where the panels sit. Without these the corners are pure black and
+          blur reads as "nothing happening". */}
+      <div className="pointer-events-none fixed inset-0 z-0">
+        {/* top-left tint */}
+        <div className="absolute -left-32 -top-32 size-[520px] rounded-full bg-[radial-gradient(closest-side,#1a2a5c_0%,transparent_70%)] opacity-50" />
+        {/* top-right tint */}
+        <div className="absolute -right-40 -top-40 size-[520px] rounded-full bg-[radial-gradient(closest-side,#2a1a4c_0%,transparent_70%)] opacity-35" />
+        {/* bottom-left tint */}
+        <div className="absolute -bottom-40 -left-40 size-[560px] rounded-full bg-[radial-gradient(closest-side,#0a1f4a_0%,transparent_70%)] opacity-50" />
+        {/* bottom-right tint */}
+        <div className="absolute -bottom-32 -right-32 size-[520px] rounded-full bg-[radial-gradient(closest-side,#1c2a4f_0%,transparent_70%)] opacity-45" />
+        {/* center halo (picks up the globe atmosphere) */}
+        <div className="absolute inset-x-0 bottom-0 h-[42vh] bg-[radial-gradient(80%_60%_at_50%_100%,#0a1f4a_0%,transparent_70%)] opacity-55" />
+      </div>
 
       {/* UI overlay as a CSS Grid — guarantees the 4 corner panels never
           overlap, regardless of how tall any of them grows. Middle row is
