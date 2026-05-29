@@ -1,5 +1,6 @@
 const RISKS = [
-  { key: "trail", label: "Persistent contrail trail · last 24 h", color: "#5ca1ff", shape: "line" },
+  { key: "persistent", label: "Flight formed a persistent contrail · 24 h", color: "#ff4d6d", shape: "line" },
+  { key: "other",      label: "Other airborne flights · 24 h",              color: "#78afe6", shape: "line" },
 ];
 
 export default function HeaderPanel({ snapshot }) {

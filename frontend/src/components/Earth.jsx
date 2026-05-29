@@ -96,19 +96,20 @@ export default function Earth({ flights = [], trajectories = [] }) {
         hexPolygonMargin={0.35}
         hexPolygonUseDots={true}
         hexPolygonColor={() => "rgba(170, 200, 235, 0.85)"}
-        /* Real trajectories — the 24 h "trail" view. The only signal we draw
-           on the globe for now: where flights formed persistent contrails
-           over the past day. */
+        /* All flights' trajectories. Persistent ones (the climate-relevant
+           signal) are highlighted in hot rose; everything else stays in
+           a cool, low-opacity blue so the visual hierarchy is obvious. */
         pathsData={trajectories}
         pathPoints={(t) => t.coords}
         pathPointLat={(p) => p[1]}
         pathPointLng={(p) => p[0]}
         pathPointAlt={0.05}
-        pathColor={() => [
-          "rgba(92, 161, 255, 0.10)",
-          "rgba(92, 161, 255, 0.78)",
-        ]}
-        pathStroke={1.1}
+        pathColor={(t) =>
+          isPersistent(t)
+            ? ["rgba(255, 77, 109, 0.18)", "rgba(255, 77, 109, 0.95)"]
+            : ["rgba(120, 175, 230, 0.05)", "rgba(120, 175, 230, 0.35)"]
+        }
+        pathStroke={(t) => (isPersistent(t) ? 1.4 : 0.7)}
         pathTransitionDuration={0}
       />
     </div>
