@@ -114,11 +114,15 @@ def _bucket_to_5min(iso_ts: str) -> str:
     return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
 
 
-async def insert_persistent_positions(flights: list[dict], fetched_at: str) -> int:
-    """Append a row to flight_positions for each flight currently in a persistent
-    contrail-forming region. on_conflict on (icao24, ts) is the insurance
-    against double-writes from the matrix-of-5 racing in GH Actions — we bucket
-    ts to a 5-minute slot so all racing runners produce the same key.
+async def insert_all_positions(flights: list[dict], fetched_at: str) -> int:
+    """Append a row to flight_positions for EVERY airborne flight, stamped
+    with its current contrail-risk class. on_conflict on (icao24, ts) is
+    insurance against double-writes from the matrix-of-5 racing in GH
+    Actions — we bucket ts to a 5-minute slot so all racing runners produce
+    the same key.
+
+    Each row carries `risk ∈ {persistent, short, none, unknown}` so the
+    frontend can color-code or filter without re-running the model.
     """
     bucketed_ts = _bucket_to_5min(fetched_at)
     rows = [
@@ -131,9 +135,10 @@ async def insert_persistent_positions(flights: list[dict], fetched_at: str) -> i
             "lon": f["lon"],
             "alt_ft": f["alt_ft"],
             "heading": f["heading"],
+            "risk": f.get("risk") or "unknown",
         }
         for f in flights
-        if f["risk"] == "persistent"
+        if f.get("icao24")
     ]
     if not rows:
         return 0
@@ -187,10 +192,11 @@ async def main() -> None:
     await upsert_snapshot(payload)
     print(f"[fetcher] upserted snapshot in {time.time()-t0:.1f}s")
 
-    n_pos = await insert_persistent_positions(enriched, payload["fetched_at"])
-    print(f"[fetcher] inserted {n_pos} persistent positions in {time.time()-t0:.1f}s")
+    n_pos = await insert_all_positions(enriched, payload["fetched_at"])
+    print(f"[fetcher] inserted {n_pos} positions (all risks) in {time.time()-t0:.1f}s")
 
-    await cleanup_old_positions(keep_hours=48)
+    # Retention shortened to 36 h now that we keep all flights (much larger volume).
+    await cleanup_old_positions(keep_hours=36)
     print(f"[fetcher] cleanup done in {time.time()-t0:.1f}s total")
 
 

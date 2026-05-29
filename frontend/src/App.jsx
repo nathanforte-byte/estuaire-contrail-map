@@ -36,7 +36,9 @@ function useApi(path, intervalMs) {
 
 export default function App() {
   const snapshot = useApi("/api/flights", 30000);
-  const trajectoriesData = useApi("/api/trajectories?hours=24", 180000);
+  // Snapshot-stitched trajectories: every airborne flight observed in the
+  // last 6 h, polylines built from 5-min position samples.
+  const trajectoriesData = useApi("/api/trajectories-snapshot?hours=6", 120000);
 
   const [filters, setFilters] = useState({
     airlines: new Set(),

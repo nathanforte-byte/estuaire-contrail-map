@@ -228,6 +228,96 @@ async def trajectories(hours: int = 24):
     return payload
 
 
+@app.get("/api/trajectories-snapshot")
+async def trajectories_snapshot(hours: int = 6, max_rows: int = 30000):
+    """GeoJSON FeatureCollection: pseudo-trajectories built by stitching
+    the 5-min snapshot positions of EVERY airborne flight observed in the
+    last `hours` hours. One LineString per icao24, sorted by ts.
+
+    Unlike `/api/trajectories` (which returns real OpenSky `/tracks` only
+    for persistent-classified icao24s), this view includes every flight —
+    persistent or not. Trade-off: coarser (5-min sampling, ~12 points/day
+    per flight) and bigger payload.
+    """
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        raise HTTPException(500, "Supabase env vars missing on Vercel")
+    hours = max(1, min(hours, 36))
+    max_rows = max(1000, min(max_rows, 50000))
+
+    cache_key = f"traj-snap:{hours}:{max_rows}"
+    cached = _cached(cache_key, SNAPSHOT_TTL)
+    if cached is not None:
+        return JSONResponse(cached)
+
+    from datetime import datetime, timedelta, timezone
+    from urllib.parse import quote
+    cutoff = quote((datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat())
+
+    url = (
+        f"{SUPABASE_URL}/rest/v1/flight_positions"
+        f"?ts=gte.{cutoff}"
+        f"&order=icao24,ts"
+        f"&select=icao24,callsign,country,ts,lat,lon,alt_ft,risk"
+        f"&limit={max_rows}"
+    )
+    headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            r = await client.get(url, headers=headers)
+            r.raise_for_status()
+            rows = r.json()
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Supabase upstream: {type(e).__name__}: {e!r}") from e
+
+    # Group by icao24 (rows are already ordered by icao24, ts).
+    by_icao: dict[str, list[dict]] = {}
+    for row in rows:
+        by_icao.setdefault(row["icao24"], []).append(row)
+
+    features = []
+    for icao24, pts in by_icao.items():
+        if len(pts) < 2:
+            continue
+        # Dominant risk over the trajectory = the most-persistent class seen,
+        # so a flight that crossed an ISSR at any point reads as persistent.
+        risks = {p.get("risk") for p in pts}
+        dominant = (
+            "persistent" if "persistent" in risks
+            else "short" if "short" in risks
+            else "none" if "none" in risks
+            else "unknown"
+        )
+        features.append({
+            "type": "Feature",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[p["lon"], p["lat"]] for p in pts],
+            },
+            "properties": {
+                "icao24": icao24,
+                "callsign": pts[-1].get("callsign"),
+                "country": pts[-1].get("country"),
+                "risk": dominant,
+                "points": len(pts),
+                "first_ts": pts[0]["ts"],
+                "last_ts": pts[-1]["ts"],
+            },
+        })
+
+    payload = {
+        "type": "FeatureCollection",
+        "features": features,
+        "hours": hours,
+        "track_count": len(features),
+        "raw_position_count": len(rows),
+    }
+    _store(cache_key, payload)
+    return payload
+
+
 @app.get("/api/health")
 def health() -> dict:
     return {"ok": True, "service": "estuaire-contrail-map"}
