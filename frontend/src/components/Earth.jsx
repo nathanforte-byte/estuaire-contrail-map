@@ -96,19 +96,9 @@ export default function Earth({ flights = [], trajectories = [] }) {
         hexPolygonMargin={0.35}
         hexPolygonUseDots={true}
         hexPolygonColor={() => "rgba(170, 200, 235, 0.85)"}
-        /* All flights — binary encoding: hot rose for the ones forming a
-           persistent contrail right now, pale blue for everything else. */
-        pointsData={flights}
-        pointLat="lat"
-        pointLng="lon"
-        pointColor={(f) => (isPersistent(f) ? COLOR_HOT : COLOR_COLD)}
-        pointAltitude={(f) => (isPersistent(f) ? 0.012 : 0.0025)}
-        pointRadius={(f) => (isPersistent(f) ? 0.2 : 0.05)}
-        pointsMerge={true}
-        /* Real trajectories — the 24 h "trail" view. Rendered in atmospheric
-           blue so they read as historical context, while the rose dots above
-           remain "right now". Gradient fades the origin and brightens toward
-           the current tip — where the rose dot sits. */
+        /* Real trajectories — the 24 h "trail" view. The only signal we draw
+           on the globe for now: where flights formed persistent contrails
+           over the past day. */
         pathsData={trajectories}
         pathPoints={(t) => t.coords}
         pathPointLat={(p) => p[1]}
