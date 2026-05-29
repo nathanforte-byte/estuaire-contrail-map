@@ -82,20 +82,14 @@ export default function App() {
       {/* Globe occupies the full canvas behind the panels */}
       <Earth flights={filteredFlights} trajectories={filteredTracks} />
 
-      {/* Ambient corner glows — give the backdrop-filter something to chew on
-          where the panels sit. Saturated tints; the panels' blur smears them
-          into a visible frosted-glass effect. */}
+      {/* Ambient corner + bottom glows — gentle, give the panel blur some
+          color to amplify without overwhelming the globe. */}
       <div className="pointer-events-none fixed inset-0 z-0">
-        {/* top-left tint */}
-        <div className="absolute -left-32 -top-32 size-[560px] rounded-full bg-[radial-gradient(closest-side,#2a4a9c_0%,transparent_72%)] opacity-95" />
-        {/* top-right tint */}
-        <div className="absolute -right-40 -top-40 size-[560px] rounded-full bg-[radial-gradient(closest-side,#4a2a8c_0%,transparent_72%)] opacity-80" />
-        {/* bottom-left tint */}
-        <div className="absolute -bottom-40 -left-40 size-[620px] rounded-full bg-[radial-gradient(closest-side,#1c4080_0%,transparent_72%)] opacity-95" />
-        {/* bottom-right tint */}
-        <div className="absolute -bottom-32 -right-32 size-[560px] rounded-full bg-[radial-gradient(closest-side,#36508c_0%,transparent_72%)] opacity-90" />
-        {/* center halo (picks up the globe atmosphere) */}
-        <div className="absolute inset-x-0 bottom-0 h-[46vh] bg-[radial-gradient(80%_60%_at_50%_100%,#0e2b6c_0%,transparent_72%)] opacity-90" />
+        <div className="absolute -left-32 -top-32 size-[520px] rounded-full bg-[radial-gradient(closest-side,#1a2a5c_0%,transparent_70%)] opacity-50" />
+        <div className="absolute -right-40 -top-40 size-[520px] rounded-full bg-[radial-gradient(closest-side,#2a1a4c_0%,transparent_70%)] opacity-35" />
+        <div className="absolute -bottom-40 -left-40 size-[560px] rounded-full bg-[radial-gradient(closest-side,#0a1f4a_0%,transparent_70%)] opacity-50" />
+        <div className="absolute -bottom-32 -right-32 size-[520px] rounded-full bg-[radial-gradient(closest-side,#1c2a4f_0%,transparent_70%)] opacity-45" />
+        <div className="absolute inset-x-0 bottom-0 h-[42vh] bg-[radial-gradient(80%_60%_at_50%_100%,#0a1f4a_0%,transparent_70%)] opacity-55" />
       </div>
 
       {/* UI overlay as a CSS Grid — guarantees the 4 corner panels never
