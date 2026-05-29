@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Globe from "react-globe.gl";
 import * as THREE from "three";
+
+import { aircraftLabel, airlineLabel } from "../lib/icao.js";
 
 /**
  * Earth — react-globe.gl dashboard map.
@@ -24,10 +26,13 @@ const isPersistent = (f) => f.risk === "persistent";
 // Hover tooltip — react-globe.gl renders this HTML next to the cursor.
 function trajectoryLabel(t) {
   const callsign = (t.callsign || t.icao24 || "—").trim();
-  const airline = (t.callsign || "").slice(0, 3).toUpperCase();
+  const airlineCode = (t.callsign || "").slice(0, 3).toUpperCase();
+  const airlineName = airlineLabel(airlineCode);
   const country = t.country || "—";
   const risk = t.risk || "unknown";
   const persistent = risk === "persistent";
+  const aircraftCode = t.aircraft_type;
+  const aircraftHuman = aircraftCode ? aircraftLabel(aircraftCode) : null;
 
   const fmtTime = (iso) => {
     if (!iso) return "—";
@@ -43,6 +48,10 @@ function trajectoryLabel(t) {
   const dot = persistent ? "#ff4d6d" : "#78afe6";
   const riskLabel = persistent ? "Persistent contrail" : "No persistent contrail";
 
+  const aircraftLine = aircraftHuman
+    ? `<div style="color:#cfd9ff; margin-top:2px">${aircraftHuman}<span style="color:#5e6f93; font-size:10.5px; margin-left:6px">${aircraftCode}</span></div>`
+    : "";
+
   return `
     <div style="
       font-family: Geist, -apple-system, sans-serif;
@@ -55,7 +64,7 @@ function trajectoryLabel(t) {
       border-radius: 10px;
       box-shadow: 0 10px 28px rgba(0,0,0,0.55), inset 0 1px 0 rgba(140,185,255,0.22);
       color: #e8ecf4;
-      min-width: 180px;
+      min-width: 200px;
       pointer-events: none;
     ">
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
@@ -64,10 +73,12 @@ function trajectoryLabel(t) {
           background:${dot}; box-shadow: 0 0 10px ${dot};
         "></span>
         <span style="font-weight:600; letter-spacing:-0.01em; color:#fff">${callsign}</span>
-        <span style="color:#7b9cda; font-size:10.5px; letter-spacing:0.06em">${airline}</span>
+        <span style="color:#7b9cda; font-size:10.5px; letter-spacing:0.06em">${airlineCode}</span>
       </div>
-      <div style="color:#a0aac3">${country}</div>
-      <div style="color:${dot}; font-weight:500; margin-top:4px">${riskLabel}</div>
+      <div style="color:#a0aac3">${airlineName}${airlineName !== airlineCode ? "" : ""}</div>
+      <div style="color:#5e6f93; font-size:11px">${country}</div>
+      ${aircraftLine}
+      <div style="color:${dot}; font-weight:500; margin-top:6px">${riskLabel}</div>
       <div style="
         margin-top:8px; padding-top:7px;
         border-top: 1px solid rgba(255,255,255,0.06);
@@ -85,6 +96,8 @@ export default function Earth({ flights = [], trajectories = [] }) {
   const wrapperRef = useRef(null);
   const [countries, setCountries] = useState(null);
   const [size, setSize] = useState({ w: 800, h: 800 });
+  const [hoveredIcao, setHoveredIcao] = useState(null);
+  const isHovered = useCallback((t) => t && t.icao24 === hoveredIcao, [hoveredIcao]);
 
   // Material is constant, build it once.
   const globeMaterial = useMemo(
@@ -157,20 +170,32 @@ export default function Earth({ flights = [], trajectories = [] }) {
         hexPolygonColor={() => "rgba(170, 200, 235, 0.85)"}
         /* All flights' trajectories. Persistent ones (the climate-relevant
            signal) are highlighted in hot rose; everything else stays in
-           a cool, low-opacity blue so the visual hierarchy is obvious. */
+           a cool, low-opacity blue so the visual hierarchy is obvious.
+           On hover, the highlighted track turns bright, thicker, glows, and
+           lifts a touch higher so it visibly detaches from the rest. */
         pathsData={trajectories}
         pathPoints={(t) => t.coords}
         pathPointLat={(p) => p[1]}
         pathPointLng={(p) => p[0]}
-        pathPointAlt={0.05}
-        pathColor={(t) =>
-          isPersistent(t)
-            ? ["rgba(255, 77, 109, 0.18)", "rgba(255, 77, 109, 0.95)"]
-            : ["rgba(120, 175, 230, 0.05)", "rgba(120, 175, 230, 0.35)"]
-        }
-        pathStroke={(t) => (isPersistent(t) ? 1.4 : 0.7)}
+        pathPointAlt={(p, i, all, t) => (isHovered(t) ? 0.075 : 0.05)}
+        pathColor={(t) => {
+          const hover = isHovered(t);
+          if (isPersistent(t)) {
+            return hover
+              ? ["rgba(255, 180, 200, 0.85)", "rgba(255, 255, 255, 1)"]
+              : ["rgba(255, 77, 109, 0.18)", "rgba(255, 77, 109, 0.95)"];
+          }
+          return hover
+            ? ["rgba(200, 230, 255, 0.85)", "rgba(255, 255, 255, 1)"]
+            : ["rgba(140, 195, 250, 0.18)", "rgba(140, 195, 250, 0.55)"];
+        }}
+        pathStroke={(t) => {
+          if (isHovered(t)) return isPersistent(t) ? 2.6 : 2.2;
+          return isPersistent(t) ? 1.4 : 1.1;
+        }}
         pathTransitionDuration={0}
         pathLabel={trajectoryLabel}
+        onPathHover={(t) => setHoveredIcao(t ? t.icao24 : null)}
       />
     </div>
   );

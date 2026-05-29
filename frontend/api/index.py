@@ -289,6 +289,10 @@ async def trajectories_snapshot(hours: int = 6, max_rows: int = 30000):
     for row in rows:
         by_icao.setdefault(row["icao24"], []).append(row)
 
+    # Bulk-lookup aircraft metadata (type_code) for everything we'll return.
+    icaos = list(by_icao.keys())
+    type_by_icao = await _aircraft_types(icaos)
+
     features = []
     for icao24, pts in by_icao.items():
         if len(pts) < 2:
@@ -312,6 +316,7 @@ async def trajectories_snapshot(hours: int = 6, max_rows: int = 30000):
                 "icao24": icao24,
                 "callsign": pts[-1].get("callsign"),
                 "country": pts[-1].get("country"),
+                "aircraft_type": type_by_icao.get(icao24),
                 "risk": dominant,
                 "points": len(pts),
                 "first_ts": pts[0]["ts"],
