@@ -253,26 +253,34 @@ async def trajectories_snapshot(hours: int = 6, max_rows: int = 30000):
     from urllib.parse import quote
     cutoff = quote((datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat())
 
-    url = (
+    base_url = (
         f"{SUPABASE_URL}/rest/v1/flight_positions"
         f"?ts=gte.{cutoff}"
         f"&order=icao24,ts"
         f"&select=icao24,callsign,country,ts,lat,lon,alt_ft,risk"
     )
-    # PostgREST defaults to 1000 rows. Use Range header to lift the cap up to
-    # max_rows — Supabase honours it on the anon role.
     headers = {
         "apikey": SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
-        "Range-Unit": "items",
-        "Range": f"0-{max_rows - 1}",
     }
+    # Supabase hard-caps the response at 1000 rows on the anon role. We
+    # paginate explicitly until we hit max_rows or run out of data.
+    rows: list[dict] = []
+    PAGE = 1000
     try:
         async with httpx.AsyncClient(timeout=25.0) as client:
-            r = await client.get(url, headers=headers)
-            if r.status_code not in (200, 206):
+            offset = 0
+            while len(rows) < max_rows:
+                page_url = f"{base_url}&limit={PAGE}&offset={offset}"
+                r = await client.get(page_url, headers=headers)
                 r.raise_for_status()
-            rows = r.json()
+                page = r.json()
+                if not page:
+                    break
+                rows.extend(page)
+                if len(page) < PAGE:
+                    break
+                offset += PAGE
     except httpx.HTTPError as e:
         raise HTTPException(502, f"Supabase upstream: {type(e).__name__}: {e!r}") from e
 
