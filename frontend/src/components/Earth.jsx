@@ -21,6 +21,65 @@ const COLOR_HOT = "#ff4d6d";
 const COLOR_COLD = "#a8d2ff";
 const isPersistent = (f) => f.risk === "persistent";
 
+// Hover tooltip — react-globe.gl renders this HTML next to the cursor.
+function trajectoryLabel(t) {
+  const callsign = (t.callsign || t.icao24 || "—").trim();
+  const airline = (t.callsign || "").slice(0, 3).toUpperCase();
+  const country = t.country || "—";
+  const risk = t.risk || "unknown";
+  const persistent = risk === "persistent";
+
+  const fmtTime = (iso) => {
+    if (!iso) return "—";
+    try {
+      const d = new Date(iso);
+      return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+    } catch {
+      return "—";
+    }
+  };
+  const first = fmtTime(t.first_ts);
+  const last = fmtTime(t.last_ts);
+  const dot = persistent ? "#ff4d6d" : "#78afe6";
+  const riskLabel = persistent ? "Persistent contrail" : "No persistent contrail";
+
+  return `
+    <div style="
+      font-family: Geist, -apple-system, sans-serif;
+      font-size: 12px;
+      line-height: 1.45;
+      padding: 10px 12px;
+      background: rgba(8,11,18,0.92);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(120,165,245,0.18);
+      border-radius: 10px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.55), inset 0 1px 0 rgba(140,185,255,0.22);
+      color: #e8ecf4;
+      min-width: 180px;
+      pointer-events: none;
+    ">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
+        <span style="
+          width:8px; height:8px; border-radius:50%;
+          background:${dot}; box-shadow: 0 0 10px ${dot};
+        "></span>
+        <span style="font-weight:600; letter-spacing:-0.01em; color:#fff">${callsign}</span>
+        <span style="color:#7b9cda; font-size:10.5px; letter-spacing:0.06em">${airline}</span>
+      </div>
+      <div style="color:#a0aac3">${country}</div>
+      <div style="color:${dot}; font-weight:500; margin-top:4px">${riskLabel}</div>
+      <div style="
+        margin-top:8px; padding-top:7px;
+        border-top: 1px solid rgba(255,255,255,0.06);
+        color:#7b9cda; font-size:11px;
+        font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
+      ">
+        ${first} → ${last} · ${t.points || 0} pts
+      </div>
+    </div>
+  `;
+}
+
 export default function Earth({ flights = [], trajectories = [] }) {
   const globeRef = useRef(null);
   const wrapperRef = useRef(null);
@@ -111,6 +170,7 @@ export default function Earth({ flights = [], trajectories = [] }) {
         }
         pathStroke={(t) => (isPersistent(t) ? 1.4 : 0.7)}
         pathTransitionDuration={0}
+        pathLabel={trajectoryLabel}
       />
     </div>
   );
