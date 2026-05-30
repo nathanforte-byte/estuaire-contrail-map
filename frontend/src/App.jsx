@@ -4,6 +4,7 @@ import HeaderPanel from "./components/HeaderPanel.jsx";
 import StatsPanel from "./components/StatsPanel.jsx";
 import FiltersPanel from "./components/FiltersPanel.jsx";
 import GatePanel from "./components/GatePanel.jsx";
+import TimeScrubber from "./components/TimeScrubber.jsx";
 import { callsignToAirline } from "./lib/icao.js";
 
 const API_BASE = ""; // same-origin in prod, Vite proxy in dev
@@ -37,8 +38,13 @@ function useApi(path, intervalMs) {
 export default function App() {
   const snapshot = useApi("/api/flights", 30000);
   // Snapshot-stitched trajectories: every airborne flight observed in the
-  // last 6 h, polylines built from 5-min position samples.
-  const trajectoriesData = useApi("/api/trajectories-snapshot?hours=6", 120000);
+  // last 12 h, polylines built from 5-min position samples. The TimeScrubber
+  // lets the user slide a 1-hour window across this range.
+  const trajectoriesData = useApi("/api/trajectories-snapshot?hours=12", 120000);
+
+  // Scrubber state — null means "show every trajectory in the loaded window".
+  const [scrubberTs, setScrubberTs] = useState(null);
+  const SCRUBBER_WINDOW_MS = 60 * 60 * 1000; // ±1 h window
 
   const [filters, setFilters] = useState({
     airlines: new Set(),
@@ -69,20 +75,46 @@ export default function App() {
     [filteredFlights],
   );
 
+  // Time range covered by the loaded trajectories (drives the scrubber bounds).
+  const timeRange = useMemo(() => {
+    if (!filteredTracks.length) return null;
+    let mn = Infinity;
+    let mx = -Infinity;
+    for (const t of filteredTracks) {
+      const s = new Date(t.first_ts).getTime();
+      const e = new Date(t.last_ts).getTime();
+      if (s < mn) mn = s;
+      if (e > mx) mx = e;
+    }
+    return { start: mn, end: mx };
+  }, [filteredTracks]);
+
+  // Trajectories overlapping the [scrubberTs - window, scrubberTs] band.
+  // null → no temporal filter, show every loaded trajectory.
+  const scrubbedTracks = useMemo(() => {
+    if (scrubberTs == null) return filteredTracks;
+    const winStart = scrubberTs - SCRUBBER_WINDOW_MS;
+    return filteredTracks.filter((t) => {
+      const s = new Date(t.first_ts).getTime();
+      const e = new Date(t.last_ts).getTime();
+      return s <= scrubberTs && e >= winStart;
+    });
+  }, [filteredTracks, scrubberTs]);
+
   const counts = useMemo(
     () => ({
       total: filteredFlights.length,
       persistent: persistentFlights.length,
-      tracks: filteredTracks.length,
+      tracks: scrubbedTracks.length,
       fetchedAt: snapshot?.fetched_at,
     }),
-    [filteredFlights, persistentFlights, filteredTracks, snapshot],
+    [filteredFlights, persistentFlights, scrubbedTracks, snapshot],
   );
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-black text-white">
       {/* Globe occupies the full canvas behind the panels */}
-      <Earth flights={filteredFlights} trajectories={filteredTracks} />
+      <Earth flights={filteredFlights} trajectories={scrubbedTracks} />
 
       {/* Ambient corner + bottom glows — gentle, give the panel blur some
           color to amplify without overwhelming the globe. */}
@@ -137,6 +169,17 @@ export default function App() {
       <div className="sm:hidden">
         <StatsPanel counts={counts} ready={!!snapshot} />
       </div>
+
+      {/* Time scrubber centred at the bottom — slides a 1 h window through
+          the 12 h of loaded trajectories. */}
+      <TimeScrubber
+        range={timeRange}
+        value={scrubberTs}
+        onChange={setScrubberTs}
+        windowMs={SCRUBBER_WINDOW_MS}
+        visibleCount={scrubbedTracks.length}
+        totalCount={filteredTracks.length}
+      />
 
       <div className="mono pointer-events-none fixed bottom-2 left-1/2 z-30 -translate-x-1/2 text-[10px] tracking-[0.18em] text-[#3a4256]">
         OPENSKY · OPEN-METEO · NATURAL EARTH · BUILT BY ESTUAIRE
