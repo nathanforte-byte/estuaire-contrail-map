@@ -14,7 +14,7 @@
     "react-dom": "^18.3.1",
     "react-globe.gl": "^2.38.0",
     "tailwindcss": "^4.3.0",
-    "three": "^0.170.0"
+    "three": "^0.184.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.3",

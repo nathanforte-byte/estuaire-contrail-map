@@ -24,24 +24,28 @@ const PLANE_PATH =
 function planeMarkup(f) {
   const persistent = isPersistent(f);
   const color = persistent ? COLOR_HOT : COLOR_COLD;
-  const size = persistent ? 22 : 13;
-  const glow = persistent ? 7 : 2.5;
+  const size = persistent ? 22 : 14;
+  const glow = persistent ? 7 : 3;
   const heading = Number.isFinite(f.heading) ? f.heading : 0;
-  const opacity = persistent ? 1 : 0.78;
-  // pointer-events: none on the icons so drag/zoom goes straight to the
-  // globe canvas. Tooltip on hover is sacrificed for now — globe rotation
-  // is the higher-priority UX.
+  const opacity = persistent ? 1 : 0.88;
+  // The OUTER wrapper is what react-globe.gl positions on the sphere — we
+  // can't put our rotation there or it gets clobbered when the lib resets
+  // `transform`. So we keep an inner div that handles the heading rotation.
   return `
     <div class="plane-marker" data-icao="${f.icao24}" style="
       width:${size}px; height:${size}px; pointer-events:none;
-      transform: rotate(${heading}deg);
-      transform-origin: 50% 50%;
-      transition: transform 0.4s cubic-bezier(0.16,1,0.3,1);
-      will-change: transform;
     ">
-      <svg viewBox="0 0 24 24" width="${size}" height="${size}" style="display:block; opacity:${opacity}; filter: drop-shadow(0 0 ${glow}px ${color});">
-        <path d="${PLANE_PATH}" fill="${color}"/>
-      </svg>
+      <div style="
+        width:100%; height:100%;
+        transform: rotate(${heading}deg);
+        transform-origin: 50% 50%;
+        transition: transform 0.4s cubic-bezier(0.16,1,0.3,1);
+        will-change: transform;
+      ">
+        <svg viewBox="0 0 24 24" width="${size}" height="${size}" style="display:block; opacity:${opacity}; filter: drop-shadow(0 0 ${glow}px ${color});">
+          <path d="${PLANE_PATH}" fill="${color}"/>
+        </svg>
+      </div>
     </div>
   `;
 }
