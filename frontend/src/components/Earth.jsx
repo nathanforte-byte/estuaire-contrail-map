@@ -28,12 +28,18 @@ function planeMarkup(f) {
   const glow = persistent ? 7 : 3;
   const heading = Number.isFinite(f.heading) ? f.heading : 0;
   const opacity = persistent ? 1 : 0.88;
+  // Stagger delay derived from the last 4 hex digits of the icao24, so the
+  // fleet appears in a deterministic-but-spread wave (0-900 ms).
+  const hashSeed = parseInt((f.icao24 || "0").slice(-4), 16) || 0;
+  const delayMs = (hashSeed % 900);
   // The OUTER wrapper is what react-globe.gl positions on the sphere — we
   // can't put our rotation there or it gets clobbered when the lib resets
   // `transform`. So we keep an inner div that handles the heading rotation.
   return `
     <div class="plane-marker" data-icao="${f.icao24}" style="
       width:${size}px; height:${size}px; pointer-events:none;
+      animation: plane-fade-in 0.6s cubic-bezier(0.16,1,0.3,1) backwards;
+      animation-delay: ${delayMs}ms;
     ">
       <div style="
         width:100%; height:100%;

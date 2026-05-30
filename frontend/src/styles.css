@@ -113,6 +113,22 @@
     background: rgb(255 255 255 / 0.08);
     border-radius: 999px;
   }
+
+  /* Cascade reveal for the airplane icons. Each .plane-marker uses an
+     inline animation-delay derived from its icao24 hash, so the fleet
+     populates the globe in a smooth wave instead of popping in all at once
+     when the API payload finally lands. `backwards` keeps opacity 0 during
+     the delay window. */
+  @keyframes plane-fade-in {
+    from {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
 }
 
 /* Tailwind v4 doesn't ship animate-in by default — add minimal keyframes
