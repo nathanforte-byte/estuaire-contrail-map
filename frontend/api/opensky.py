@@ -24,8 +24,16 @@ OPENSKY_TOKEN_URL = (
     "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token"
 )
 
-# Europe bounding box (lamin, lomin, lamax, lomax)
-EUROPE_BBOX = (35.0, -12.0, 60.0, 30.0)
+# Wide regional bbox — Europe + Atlantic + North Africa + Caspian.
+# Cost is already 4 credits/call past 400 sq°, so widening past the original
+# Europe-only window is free. This lets us follow flights leaving Europe out
+# over the Atlantic and inbound traffic from US east / Maghreb / Middle East.
+#
+#   lamin = 18  → covers Sahel / Northern Sahara
+#   lomin = -45 → mid-Atlantic (~halfway JFK→LHR)
+#   lamax = 72  → reaches polar route entries
+#   lomax = 58  → past the Caspian to Western Iran
+EUROPE_BBOX = (18.0, -45.0, 72.0, 58.0)
 
 # Proactively refresh the token this many seconds before it expires.
 _TOKEN_MARGIN_S = 30
