@@ -3,8 +3,11 @@
   "name": "estuaire-cron-dispatcher",
   "main": "src/index.ts",
   "compatibility_date": "2026-05-01",
+  "account_id": "d021644110d131b4913d24e66b27fb56",
+  // Cron paused — data collection frozen while the UI is being finalised.
+  // To resume: restore `"crons": ["*/5 * * * *"]` and `npx wrangler deploy`.
   "triggers": {
-    "crons": ["*/5 * * * *"]
+    "crons": []
   },
   "observability": {
     "enabled": true,
