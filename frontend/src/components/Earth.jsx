@@ -21,7 +21,7 @@ const isPersistent = (f) => f.risk === "persistent";
 const PLANE_PATH =
   "M12 2 L11.6 9 L2 13 L2 14 L11.6 12.4 L11.6 18 L8.6 19.5 L8.6 20.5 L12 19.5 L15.4 20.5 L15.4 19.5 L12.4 18 L12.4 12.4 L22 14 L22 13 L12.4 9 Z";
 
-function planeMarkup(f) {
+function planeMarkup(f, animate) {
   const persistent = isPersistent(f);
   const color = persistent ? COLOR_HOT : COLOR_COLD;
   const size = persistent ? 22 : 14;
@@ -29,17 +29,19 @@ function planeMarkup(f) {
   const heading = Number.isFinite(f.heading) ? f.heading : 0;
   const opacity = persistent ? 1 : 0.88;
   // Stagger delay derived from the last 4 hex digits of the icao24, so the
-  // fleet appears in a deterministic-but-spread wave (0-900 ms).
+  // initial wave is spread (0-900 ms) but stable per aircraft.
   const hashSeed = parseInt((f.icao24 || "0").slice(-4), 16) || 0;
-  const delayMs = (hashSeed % 900);
+  const delayMs = hashSeed % 900;
+  const animStyle = animate
+    ? `animation: plane-fade-in 0.6s cubic-bezier(0.16,1,0.3,1) backwards; animation-delay: ${delayMs}ms;`
+    : "";
   // The OUTER wrapper is what react-globe.gl positions on the sphere — we
   // can't put our rotation there or it gets clobbered when the lib resets
   // `transform`. So we keep an inner div that handles the heading rotation.
   return `
     <div class="plane-marker" data-icao="${f.icao24}" style="
       width:${size}px; height:${size}px; pointer-events:none;
-      animation: plane-fade-in 0.6s cubic-bezier(0.16,1,0.3,1) backwards;
-      animation-delay: ${delayMs}ms;
+      ${animStyle}
     ">
       <div style="
         width:100%; height:100%;
@@ -61,6 +63,10 @@ export default function Earth({ flights = [] }) {
   const wrapperRef = useRef(null);
   const [countries, setCountries] = useState(null);
   const [size, setSize] = useState({ w: 800, h: 800 });
+  // Tracks every icao24 we've ever rendered. The fade-in animation fires
+  // only the first time we see each aircraft (page load + any genuine
+  // newcomer later); scrubbing through buckets leaves existing planes still.
+  const revealedRef = useRef(new Set());
 
   const globeMaterial = useMemo(
     () =>
@@ -104,11 +110,14 @@ export default function Earth({ flights = [] }) {
     ctrl.dampingFactor = 0.07;
   }, [countries]);
 
-  // Build a DOM node per flight. No event listeners — icons are visual only,
-  // pointer-events: none lets drag/zoom hit the canvas underneath.
+  // Build a DOM node per flight. The fade-in animation only fires the first
+  // time we ever render this icao24; subsequent scrubs find the icao in the
+  // ref and skip the animation so positions update without flicker.
   const makeElement = useCallback((f) => {
+    const firstSighting = !revealedRef.current.has(f.icao24);
+    if (firstSighting) revealedRef.current.add(f.icao24);
     const wrapper = document.createElement("div");
-    wrapper.innerHTML = planeMarkup(f);
+    wrapper.innerHTML = planeMarkup(f, firstSighting);
     return wrapper.firstElementChild;
   }, []);
 
