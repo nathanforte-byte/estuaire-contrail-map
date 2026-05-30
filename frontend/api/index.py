@@ -335,6 +335,80 @@ async def trajectories_snapshot(hours: int = 6, max_rows: int = 30000):
     return payload
 
 
+@app.get("/api/positions")
+async def positions(hours: int = 12, max_rows: int = 60000):
+    """Flat list of every flight position observed over the last `hours` h.
+    Frontend groups by `ts` to drive the time-scrubber: each 5-min bucket
+    becomes one playable frame on the globe.
+
+    Stamps aircraft_type from aircraft_metadata in a single bulk lookup so
+    the tooltip can show the airframe without an extra round-trip.
+    """
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        raise HTTPException(500, "Supabase env vars missing on Vercel")
+    hours = max(1, min(hours, 36))
+    max_rows = max(1000, min(max_rows, 80000))
+
+    cache_key = f"pos:{hours}:{max_rows}"
+    cached = _cached(cache_key, SNAPSHOT_TTL)
+    if cached is not None:
+        return JSONResponse(cached)
+
+    from datetime import datetime, timedelta, timezone
+    from urllib.parse import quote
+    cutoff = quote((datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat())
+
+    base_url = (
+        f"{SUPABASE_URL}/rest/v1/flight_positions"
+        f"?ts=gte.{cutoff}"
+        f"&order=ts.desc,icao24"
+        f"&select=icao24,callsign,country,ts,lat,lon,alt_ft,heading,risk"
+    )
+    headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
+    }
+    rows: list[dict] = []
+    PAGE = 1000
+    try:
+        async with httpx.AsyncClient(timeout=25.0) as client:
+            offset = 0
+            while len(rows) < max_rows:
+                page_url = f"{base_url}&limit={PAGE}&offset={offset}"
+                r = await client.get(page_url, headers=headers)
+                r.raise_for_status()
+                page = r.json()
+                if not page:
+                    break
+                rows.extend(page)
+                if len(page) < PAGE:
+                    break
+                offset += PAGE
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Supabase upstream: {type(e).__name__}: {e!r}") from e
+
+    # Bulk-lookup aircraft type for the distinct icao24s we'll send back.
+    icaos = list({row["icao24"] for row in rows if row.get("icao24")})
+    type_by_icao = await _aircraft_types(icaos)
+    for row in rows:
+        t = type_by_icao.get(row.get("icao24"))
+        if t:
+            row["aircraft_type"] = t
+
+    # Buckets sorted descending (most recent first) so the UI can default to
+    # the latest one without scanning the whole list.
+    bucket_set = sorted({row["ts"] for row in rows}, reverse=True)
+
+    payload = {
+        "hours": hours,
+        "position_count": len(rows),
+        "buckets": bucket_set,
+        "positions": rows,
+    }
+    _store(cache_key, payload)
+    return payload
+
+
 @app.get("/api/health")
 def health() -> dict:
     return {"ok": True, "service": "estuaire-contrail-map"}

@@ -4,9 +4,10 @@ import HeaderPanel from "./components/HeaderPanel.jsx";
 import StatsPanel from "./components/StatsPanel.jsx";
 import FiltersPanel from "./components/FiltersPanel.jsx";
 import GatePanel from "./components/GatePanel.jsx";
+import TimeScrubber from "./components/TimeScrubber.jsx";
 import { callsignToAirline } from "./lib/icao.js";
 
-const API_BASE = ""; // same-origin in prod, Vite proxy in dev
+const API_BASE = "";
 
 function useApi(path, intervalMs) {
   const [data, setData] = useState(null);
@@ -20,7 +21,7 @@ function useApi(path, intervalMs) {
         const j = await r.json();
         if (!cancelled) setData(j);
       } catch {
-        /* keep last good payload */
+        /* keep last good */
       } finally {
         if (!cancelled) timer = setTimeout(tick, intervalMs);
       }
@@ -35,22 +36,44 @@ function useApi(path, intervalMs) {
 }
 
 export default function App() {
-  const snapshot = useApi("/api/flights", 30000);
+  // Pull every position observed over the last 12 h. The scrubber plays
+  // through the 5-min buckets stamped on each row.
+  const positionsResp = useApi("/api/positions?hours=12", 120000);
 
   const [filters, setFilters] = useState({
     airlines: new Set(),
     airports: new Set(),
     aircraftTypes: new Set(),
   });
+  // null = stick to the latest bucket (auto-advances as new data arrives).
+  // a string ts = freeze the globe on that bucket while scrubbing.
+  const [scrubberTs, setScrubberTs] = useState(null);
 
-  const flights = useMemo(() => {
-    if (!snapshot?.flights) return [];
-    return snapshot.flights
-      .filter((f) => f.lat != null && f.lon != null)
-      .map((f) => ({ ...f, airline: callsignToAirline(f.callsign) }));
-  }, [snapshot]);
+  // Buckets are pre-sorted descending by the API; lowest index = newest.
+  const buckets = useMemo(() => positionsResp?.buckets || [], [positionsResp]);
+  const latestBucket = buckets[0] || null;
 
-  const filteredFlights = useMemo(() => apply(flights, filters), [flights, filters]);
+  // Group raw positions into a Map<bucketTs, flightObjects[]>.
+  const positionsByBucket = useMemo(() => {
+    const m = new Map();
+    for (const row of positionsResp?.positions || []) {
+      if (row.lat == null || row.lon == null) continue;
+      const enriched = { ...row, airline: callsignToAirline(row.callsign) };
+      const arr = m.get(row.ts);
+      if (arr) arr.push(enriched);
+      else m.set(row.ts, [enriched]);
+    }
+    return m;
+  }, [positionsResp]);
+
+  // What the user is currently looking at on the globe.
+  const activeBucket = scrubberTs ?? latestBucket;
+  const activeFlights = useMemo(
+    () => positionsByBucket.get(activeBucket) || [],
+    [positionsByBucket, activeBucket],
+  );
+
+  const filteredFlights = useMemo(() => apply(activeFlights, filters), [activeFlights, filters]);
   const persistentFlights = useMemo(
     () => filteredFlights.filter((f) => f.risk === "persistent"),
     [filteredFlights],
@@ -60,18 +83,43 @@ export default function App() {
     () => ({
       total: filteredFlights.length,
       persistent: persistentFlights.length,
-      fetchedAt: snapshot?.fetched_at,
+      fetchedAt: activeBucket,
     }),
-    [filteredFlights, persistentFlights, snapshot],
+    [filteredFlights, persistentFlights, activeBucket],
   );
+
+  // Scrubber range = first and last bucket timestamp.
+  const timeRange = useMemo(() => {
+    if (!buckets.length) return null;
+    return {
+      start: new Date(buckets[buckets.length - 1]).getTime(),
+      end: new Date(buckets[0]).getTime(),
+    };
+  }, [buckets]);
+
+  // The scrubber emits absolute ms; snap it to the closest known bucket so
+  // the globe always lands on a concrete frame.
+  const onScrub = (ms) => {
+    if (ms == null) {
+      setScrubberTs(null);
+      return;
+    }
+    let best = buckets[0];
+    let bestDist = Infinity;
+    for (const b of buckets) {
+      const d = Math.abs(new Date(b).getTime() - ms);
+      if (d < bestDist) {
+        bestDist = d;
+        best = b;
+      }
+    }
+    setScrubberTs(best);
+  };
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-black text-white">
-      {/* Globe occupies the full canvas behind the panels */}
       <Earth flights={filteredFlights} />
 
-      {/* Ambient corner + bottom glows — gentle, give the panel blur some
-          color to amplify without overwhelming the globe. */}
       <div className="pointer-events-none fixed inset-0 z-0">
         <div className="absolute -left-32 -top-32 size-[520px] rounded-full bg-[radial-gradient(closest-side,#1a2a5c_0%,transparent_70%)] opacity-50" />
         <div className="absolute -right-40 -top-40 size-[520px] rounded-full bg-[radial-gradient(closest-side,#2a1a4c_0%,transparent_70%)] opacity-35" />
@@ -80,9 +128,6 @@ export default function App() {
         <div className="absolute inset-x-0 bottom-0 h-[42vh] bg-[radial-gradient(80%_60%_at_50%_100%,#0a1f4a_0%,transparent_70%)] opacity-55" />
       </div>
 
-      {/* UI overlay as a CSS Grid — guarantees the 4 corner panels never
-          overlap, regardless of how tall any of them grows. Middle row is
-          1fr so the globe stays visible through the center. */}
       <div
         className="
           pointer-events-none fixed inset-0 z-10
@@ -91,37 +136,41 @@ export default function App() {
           [&>*]:pointer-events-auto
         "
       >
-        {/* Top-left */}
         <div className="self-start justify-self-start max-w-full">
-          <HeaderPanel snapshot={snapshot} />
+          <HeaderPanel snapshot={positionsResp} />
         </div>
-        {/* Top-right */}
         <div className="self-start justify-self-end hidden sm:block">
-          <StatsPanel counts={counts} ready={!!snapshot} />
+          <StatsPanel counts={counts} ready={!!positionsResp} />
         </div>
 
-        {/* Middle row left as empty 1fr so panels can't grow into each other */}
         <div className="hidden sm:block" />
         <div className="hidden sm:block" />
 
-        {/* Bottom-left */}
         <div className="self-end justify-self-start max-w-full">
           <FiltersPanel
-            flights={flights}
+            flights={activeFlights}
             filters={filters}
             setFilters={setFilters}
           />
         </div>
-        {/* Bottom-right */}
         <div className="self-end justify-self-end max-w-full">
           <GatePanel />
         </div>
       </div>
 
-      {/* Floating mobile-only mini stats (since the top-right slot is hidden on sm-) */}
       <div className="sm:hidden">
-        <StatsPanel counts={counts} ready={!!snapshot} />
+        <StatsPanel counts={counts} ready={!!positionsResp} />
       </div>
+
+      <TimeScrubber
+        range={timeRange}
+        value={scrubberTs ? new Date(scrubberTs).getTime() : null}
+        onChange={onScrub}
+        windowMs={5 * 60 * 1000}
+        visibleCount={filteredFlights.length}
+        totalCount={activeFlights.length}
+        label={activeBucket}
+      />
 
       <div className="mono pointer-events-none fixed bottom-2 left-1/2 z-30 -translate-x-1/2 text-[10px] tracking-[0.18em] text-[#3a4256]">
         OPENSKY · OPEN-METEO · NATURAL EARTH · BUILT BY ESTUAIRE

@@ -1,24 +1,21 @@
 import { useMemo } from "react";
 
 /**
- * TimeScrubber — bottom-of-screen slider that moves a fixed window across
- * the loaded trajectories' time range.
+ * TimeScrubber — bottom-of-screen slider that picks one 5-min snapshot
+ * bucket. Moving the handle replays the globe at that point in time:
+ * dots jump to where every aircraft was at that instant.
  *
- *   null  → "all loaded trajectories" (no temporal filter)
- *   ts    → only trajectories overlapping [ts - windowMs, ts]
- *
- * The track itself shows the data extent; the handle is the focus point.
- * A faint stripe under the handle hints at the window length.
+ *   value=null → live (latest bucket), auto-advances on new data
+ *   value=ms   → frozen on a specific bucket
  */
 export default function TimeScrubber({
   range,
   value,
   onChange,
-  windowMs,
   visibleCount,
   totalCount,
+  label,
 }) {
-  // Step the slider every 5 min (matches the data granularity).
   const STEP_MS = 5 * 60 * 1000;
 
   const { min, max, step } = useMemo(() => {
@@ -32,11 +29,8 @@ export default function TimeScrubber({
 
   if (!range || max - min < STEP_MS) return null;
 
-  const isActive = value != null;
+  const isLive = value == null;
   const ts = value ?? max;
-
-  const windowPct = Math.min(100, (windowMs / (max - min)) * 100);
-  const handlePct = ((ts - min) / (max - min)) * 100;
 
   return (
     <aside
@@ -48,33 +42,27 @@ export default function TimeScrubber({
     >
       <button
         type="button"
-        onClick={() => onChange(isActive ? null : max)}
+        onClick={() => onChange(isLive ? max - 30 * 60 * 1000 : null)}
         className={
           "shrink-0 rounded-full border px-3 py-[5px] text-[10.5px] uppercase tracking-[0.12em] transition-all active:scale-[0.96] " +
-          (isActive
-            ? "border-white/10 text-[#7b9cda] hover:text-white hover:border-white/20"
-            : "border-[#3273ff]/40 bg-[#3273ff]/15 text-[#cfd9ff]")
+          (isLive
+            ? "border-[#3273ff]/40 bg-[#3273ff]/15 text-[#cfd9ff]"
+            : "border-white/10 text-[#7b9cda] hover:text-white hover:border-white/20")
         }
+        title={isLive ? "Step back 30 min" : "Snap back to live"}
       >
-        {isActive ? "Show all" : "All time"}
+        {isLive ? (
+          <span className="flex items-center gap-1.5">
+            <span className="size-[5px] rounded-full bg-[#3273ff] shadow-[0_0_6px_#3273ff]" />
+            Live
+          </span>
+        ) : (
+          "Go live"
+        )}
       </button>
 
       <div className="relative flex-1">
-        {/* Track */}
-        <div className="relative h-[6px] rounded-full bg-white/[0.06] overflow-hidden">
-          {/* Window highlight under the handle */}
-          {isActive && (
-            <div
-              className="absolute inset-y-0 bg-gradient-to-r from-transparent via-[#3273ff]/55 to-transparent"
-              style={{
-                left: `calc(${handlePct}% - ${windowPct}%)`,
-                width: `${windowPct}%`,
-              }}
-            />
-          )}
-        </div>
-
-        {/* Native range — invisible, on top, for accessibility + drag */}
+        <div className="h-[6px] rounded-full bg-white/[0.06]" />
         <input
           type="range"
           min={min}
@@ -102,18 +90,26 @@ export default function TimeScrubber({
       </div>
 
       <div className="shrink-0 text-right leading-tight">
-        <div className="mono text-[12px] text-[#edeffd]" style={{ fontVariantNumeric: "tabular-nums" }}>
-          {isActive ? `${fmtTime(ts - windowMs)} → ${fmtTime(ts)}` : `${fmtTime(min)} → ${fmtTime(max)}`}
+        <div
+          className="mono text-[12px] text-[#edeffd]"
+          style={{ fontVariantNumeric: "tabular-nums" }}
+        >
+          {fmtTime(label || ts)}
         </div>
-        <div className="mono text-[10px] text-[#7b9cda]" style={{ fontVariantNumeric: "tabular-nums" }}>
-          {visibleCount.toLocaleString()} of {totalCount.toLocaleString()} tracks
+        <div
+          className="mono text-[10px] text-[#7b9cda]"
+          style={{ fontVariantNumeric: "tabular-nums" }}
+        >
+          {visibleCount.toLocaleString()} of {totalCount.toLocaleString()} flights
         </div>
       </div>
     </aside>
   );
 }
 
-function fmtTime(ms) {
+function fmtTime(input) {
+  if (input == null) return "—";
+  const ms = typeof input === "number" ? input : new Date(input).getTime();
   if (!Number.isFinite(ms)) return "—";
   return new Date(ms).toLocaleTimeString("en-GB", {
     hour: "2-digit",
