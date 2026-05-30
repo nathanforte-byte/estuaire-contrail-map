@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Globe from "react-globe.gl";
 import * as THREE from "three";
 
-import { aircraftLabel, airlineLabel } from "../lib/icao.js";
-
 /**
  * Earth — react-globe.gl dashboard map.
  *
@@ -11,8 +9,9 @@ import { aircraftLabel, airlineLabel } from "../lib/icao.js";
  * by its current heading. Persistent contrail-forming flights are bigger,
  * hot rose, and slightly lifted; everything else is small and pale blue.
  *
- * Tooltip is custom (the html-elements layer has no built-in label hook —
- * we attach mouseenter/leave on each node and render a panel near the cursor).
+ * Icons are pointer-events: none — drag/zoom passes through to the globe
+ * canvas. (Hover tooltips were sacrificed for the rotation UX; revisit
+ * later via a canvas-level raycast hit-test if needed.)
  */
 const COLOR_HOT = "#ff4d6d";
 const COLOR_COLD = "#a8d2ff";
@@ -29,9 +28,12 @@ function planeMarkup(f) {
   const glow = persistent ? 7 : 2.5;
   const heading = Number.isFinite(f.heading) ? f.heading : 0;
   const opacity = persistent ? 1 : 0.78;
+  // pointer-events: none on the icons so drag/zoom goes straight to the
+  // globe canvas. Tooltip on hover is sacrificed for now — globe rotation
+  // is the higher-priority UX.
   return `
     <div class="plane-marker" data-icao="${f.icao24}" style="
-      width:${size}px; height:${size}px; cursor:pointer; pointer-events:auto;
+      width:${size}px; height:${size}px; pointer-events:none;
       transform: rotate(${heading}deg);
       transform-origin: 50% 50%;
       transition: transform 0.4s cubic-bezier(0.16,1,0.3,1);
@@ -44,70 +46,11 @@ function planeMarkup(f) {
   `;
 }
 
-// Render the tooltip HTML (driven by hover state from <Earth>).
-function tooltipMarkup(f) {
-  const callsign = (f.callsign || f.icao24 || "—").trim();
-  const airlineCode = (f.callsign || "").slice(0, 3).toUpperCase();
-  const airlineName = airlineLabel(airlineCode);
-  const country = f.country || "—";
-  const persistent = isPersistent(f);
-  const aircraftCode = f.aircraft_type;
-  const aircraftHuman = aircraftCode ? aircraftLabel(aircraftCode) : null;
-  const dot = persistent ? COLOR_HOT : "#78afe6";
-  const riskLabel = persistent ? "Persistent contrail · now" : "No persistent contrail";
-
-  const aircraftLine = aircraftHuman
-    ? `<div style="color:#cfd9ff; margin-top:2px">${aircraftHuman}<span style="color:#5e6f93; font-size:10.5px; margin-left:6px">${aircraftCode}</span></div>`
-    : "";
-
-  const fl = f.alt_ft ? `FL${Math.round(f.alt_ft / 100)}` : null;
-  const heading = Number.isFinite(f.heading) ? `${Math.round(f.heading)}°` : null;
-  const flightLine = [fl, heading].filter(Boolean).join(" · ");
-
-  return `
-    <div style="
-      font-family: Geist, -apple-system, sans-serif;
-      font-size: 12px;
-      line-height: 1.45;
-      padding: 10px 12px;
-      background: rgba(8,11,18,0.95);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      border: 1px solid rgba(120,165,245,0.18);
-      border-radius: 10px;
-      box-shadow: 0 10px 28px rgba(0,0,0,0.55), inset 0 1px 0 rgba(140,185,255,0.22);
-      color: #e8ecf4;
-      min-width: 200px;
-      pointer-events: none;
-    ">
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px">
-        <span style="
-          width:8px; height:8px; border-radius:50%;
-          background:${dot}; box-shadow: 0 0 10px ${dot};
-        "></span>
-        <span style="font-weight:600; letter-spacing:-0.01em; color:#fff">${callsign}</span>
-        <span style="color:#7b9cda; font-size:10.5px; letter-spacing:0.06em">${airlineCode}</span>
-      </div>
-      <div style="color:#a0aac3">${airlineName !== airlineCode ? airlineName : ""}</div>
-      <div style="color:#5e6f93; font-size:11px">${country}</div>
-      ${aircraftLine}
-      ${flightLine ? `<div style="color:#cfd9ff; font-size:11px; margin-top:4px; font-family: 'Geist Mono', ui-monospace, monospace">${flightLine}</div>` : ""}
-      <div style="color:${dot}; font-weight:500; margin-top:6px">${riskLabel}</div>
-    </div>
-  `;
-}
-
 export default function Earth({ flights = [] }) {
   const globeRef = useRef(null);
   const wrapperRef = useRef(null);
-  const tooltipRef = useRef(null);
   const [countries, setCountries] = useState(null);
   const [size, setSize] = useState({ w: 800, h: 800 });
-  const flightsById = useMemo(() => {
-    const m = new Map();
-    for (const f of flights) m.set(f.icao24, f);
-    return m;
-  }, [flights]);
 
   const globeMaterial = useMemo(
     () =>
@@ -151,38 +94,13 @@ export default function Earth({ flights = [] }) {
     ctrl.dampingFactor = 0.07;
   }, [countries]);
 
-  // Build a DOM node per flight. Attach hover handlers that drive the
-  // tooltip overlay.
-  const makeElement = useCallback(
-    (f) => {
-      const wrapper = document.createElement("div");
-      wrapper.innerHTML = planeMarkup(f);
-      const node = wrapper.firstElementChild;
-
-      const onEnter = (e) => {
-        const tip = tooltipRef.current;
-        if (!tip) return;
-        tip.innerHTML = tooltipMarkup(flightsById.get(f.icao24) || f);
-        tip.style.opacity = "1";
-        positionTooltip(tip, e);
-      };
-      const onMove = (e) => {
-        const tip = tooltipRef.current;
-        if (!tip) return;
-        positionTooltip(tip, e);
-      };
-      const onLeave = () => {
-        const tip = tooltipRef.current;
-        if (!tip) return;
-        tip.style.opacity = "0";
-      };
-      node.addEventListener("mouseenter", onEnter);
-      node.addEventListener("mousemove", onMove);
-      node.addEventListener("mouseleave", onLeave);
-      return node;
-    },
-    [flightsById],
-  );
+  // Build a DOM node per flight. No event listeners — icons are visual only,
+  // pointer-events: none lets drag/zoom hit the canvas underneath.
+  const makeElement = useCallback((f) => {
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = planeMarkup(f);
+    return wrapper.firstElementChild;
+  }, []);
 
   return (
     <div ref={wrapperRef} className="absolute inset-0">
@@ -215,35 +133,6 @@ export default function Earth({ flights = [] }) {
         htmlElement={makeElement}
         htmlTransitionDuration={400}
       />
-
-      {/* Custom tooltip overlay — positioned via the element hover handlers above. */}
-      <div
-        ref={tooltipRef}
-        style={{
-          position: "fixed",
-          left: 0,
-          top: 0,
-          zIndex: 100,
-          opacity: 0,
-          transition: "opacity 0.12s ease-out",
-          pointerEvents: "none",
-        }}
-      />
     </div>
   );
-}
-
-function positionTooltip(tip, e) {
-  // Position to the upper-right of the cursor, but flip when close to edges.
-  const offsetX = 14;
-  const offsetY = -8;
-  const rect = tip.getBoundingClientRect();
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  let x = e.clientX + offsetX;
-  let y = e.clientY + offsetY - rect.height;
-  if (x + rect.width > vw - 8) x = e.clientX - rect.width - offsetX;
-  if (y < 8) y = e.clientY + offsetY + 18;
-  if (y + rect.height > vh - 8) y = vh - rect.height - 8;
-  tip.style.transform = `translate(${x}px, ${y}px)`;
 }

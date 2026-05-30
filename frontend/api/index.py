@@ -356,7 +356,38 @@ async def positions(hours: int = 12, max_rows: int = 60000):
 
     from datetime import datetime, timedelta, timezone
     from urllib.parse import quote
-    cutoff = quote((datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat())
+
+    headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
+    }
+
+    # Anchor the lookback on the most recent ts that actually exists in the
+    # table — that way the demo keeps working even while data collection is
+    # frozen (otherwise `now() - N hours` walks past the last writes and we
+    # serve an empty payload).
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            anchor_url = (
+                f"{SUPABASE_URL}/rest/v1/flight_positions"
+                f"?select=ts&order=ts.desc&limit=1"
+            )
+            r = await client.get(anchor_url, headers=headers)
+            r.raise_for_status()
+            anchor_rows = r.json()
+            if not anchor_rows:
+                payload = {"hours": hours, "position_count": 0, "buckets": [], "positions": []}
+                _store(cache_key, payload)
+                return payload
+            anchor_ts = datetime.fromisoformat(anchor_rows[0]["ts"].replace("Z", "+00:00"))
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Supabase upstream: {type(e).__name__}: {e!r}") from e
+
+    # Anchor against the latest known data, but never look further back than
+    # `now() - hours` (so a healthy pipeline still behaves as before).
+    anchor_cutoff = anchor_ts - timedelta(hours=hours)
+    live_cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    cutoff = quote(min(anchor_cutoff, live_cutoff).isoformat())
 
     base_url = (
         f"{SUPABASE_URL}/rest/v1/flight_positions"
@@ -364,10 +395,6 @@ async def positions(hours: int = 12, max_rows: int = 60000):
         f"&order=ts.desc,icao24"
         f"&select=icao24,callsign,country,ts,lat,lon,alt_ft,heading,risk"
     )
-    headers = {
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
-    }
     rows: list[dict] = []
     PAGE = 1000
     try:
