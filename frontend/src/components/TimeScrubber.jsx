@@ -16,7 +16,7 @@ export default function TimeScrubber({
   totalCount,
   label,
 }) {
-  const STEP_MS = 5 * 60 * 1000;
+  const STEP_MS = 60 * 1000;
 
   const { min, max, step } = useMemo(() => {
     if (!range) return { min: 0, max: 0, step: STEP_MS };
@@ -36,8 +36,8 @@ export default function TimeScrubber({
     <aside
       className="
         glass pointer-events-auto fixed bottom-5 left-1/2 z-30 -translate-x-1/2
-        flex w-[min(640px,calc(100vw-32px))] items-center gap-4
-        rounded-2xl px-4 py-[10px]
+        flex w-[min(960px,calc(100vw-32px))] items-center gap-5
+        rounded-2xl px-5 py-[14px]
       "
     >
       <button
@@ -62,7 +62,7 @@ export default function TimeScrubber({
       </button>
 
       <div className="relative flex-1">
-        <div className="h-[6px] rounded-full bg-white/[0.06]" />
+        <div className="h-[8px] rounded-full bg-white/[0.06]" />
         <input
           type="range"
           min={min}
@@ -71,20 +71,20 @@ export default function TimeScrubber({
           value={ts}
           onChange={(e) => onChange(Number(e.target.value))}
           className="
-            absolute inset-x-0 top-1/2 -translate-y-1/2 h-6 w-full appearance-none bg-transparent
+            absolute inset-x-0 top-1/2 -translate-y-1/2 h-8 w-full appearance-none bg-transparent
             cursor-pointer outline-none
             [&::-webkit-slider-thumb]:appearance-none
-            [&::-webkit-slider-thumb]:size-[14px]
+            [&::-webkit-slider-thumb]:size-[18px]
             [&::-webkit-slider-thumb]:rounded-full
             [&::-webkit-slider-thumb]:bg-white
-            [&::-webkit-slider-thumb]:shadow-[0_0_0_3px_rgba(50,115,255,0.35),0_0_12px_rgba(50,115,255,0.7)]
+            [&::-webkit-slider-thumb]:shadow-[0_0_0_4px_rgba(50,115,255,0.4),0_0_18px_rgba(50,115,255,0.8)]
             [&::-webkit-slider-thumb]:transition-transform
             [&::-webkit-slider-thumb]:hover:scale-110
-            [&::-moz-range-thumb]:size-[14px]
+            [&::-moz-range-thumb]:size-[18px]
             [&::-moz-range-thumb]:rounded-full
             [&::-moz-range-thumb]:border-none
             [&::-moz-range-thumb]:bg-white
-            [&::-moz-range-thumb]:shadow-[0_0_0_3px_rgba(50,115,255,0.35),0_0_12px_rgba(50,115,255,0.7)]
+            [&::-moz-range-thumb]:shadow-[0_0_0_4px_rgba(50,115,255,0.4),0_0_18px_rgba(50,115,255,0.8)]
           "
         />
       </div>

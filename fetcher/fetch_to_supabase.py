@@ -104,13 +104,14 @@ async def upsert_snapshot(payload: dict) -> None:
             raise RuntimeError(f"Supabase upsert {r.status_code}: {r.text[:300]}")
 
 
-def _bucket_to_5min(iso_ts: str) -> str:
-    """Round a UTC ISO timestamp down to the nearest 5-minute boundary so all
-    matrix-of-5 runners on the same cron tick produce identical `ts` values,
-    making the on_conflict dedupe effective.
+def _bucket_to_1min(iso_ts: str) -> str:
+    """Round a UTC ISO timestamp down to the nearest 1-minute boundary.
+    Matrix-of-5 runners on the same cron tick usually finish within seconds
+    of each other so they still hash to the same bucket; if some straddle a
+    minute boundary the on_conflict=ignore-duplicates handles the residual.
     """
     dt = datetime.fromisoformat(iso_ts.replace("Z", "+00:00"))
-    epoch = int(dt.timestamp() // 300) * 300
+    epoch = int(dt.timestamp() // 60) * 60
     return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
 
 
@@ -124,7 +125,7 @@ async def insert_all_positions(flights: list[dict], fetched_at: str) -> int:
     Each row carries `risk ∈ {persistent, short, none, unknown}` so the
     frontend can color-code or filter without re-running the model.
     """
-    bucketed_ts = _bucket_to_5min(fetched_at)
+    bucketed_ts = _bucket_to_1min(fetched_at)
     rows = [
         {
             "ts": bucketed_ts,
