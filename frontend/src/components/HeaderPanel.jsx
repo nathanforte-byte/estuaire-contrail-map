@@ -1,6 +1,6 @@
 const RISKS = [
-  { key: "persistent", label: "Flight formed a persistent contrail · 24 h", color: "#ff4d6d", shape: "line" },
-  { key: "other",      label: "Other airborne flights · 24 h",              color: "#78afe6", shape: "line" },
+  { key: "persistent", label: "Forming a persistent contrail · now", color: "#ff4d6d" },
+  { key: "other",      label: "Other airborne flights",              color: "#a8d2ff" },
 ];
 
 export default function HeaderPanel({ snapshot }) {
@@ -40,17 +40,10 @@ export default function HeaderPanel({ snapshot }) {
       <ul className="flex flex-col gap-[6px]">
         {RISKS.map((r) => (
           <li key={r.key} className="flex items-center gap-[10px] text-[12px] text-[#a0aac3]">
-            {r.shape === "line" ? (
-              <span
-                className="h-[2px] w-[12px] flex-shrink-0 rounded-full"
-                style={{ background: r.color, boxShadow: `0 0 6px ${r.color}` }}
-              />
-            ) : (
-              <span
-                className="size-[9px] flex-shrink-0 rounded-full"
-                style={{ background: r.color, boxShadow: `0 0 12px ${r.color}, 0 0 2px ${r.color}` }}
-              />
-            )}
+            <span
+              className="size-[9px] flex-shrink-0 rounded-full"
+              style={{ background: r.color, boxShadow: `0 0 12px ${r.color}, 0 0 2px ${r.color}` }}
+            />
             {r.label}
           </li>
         ))}

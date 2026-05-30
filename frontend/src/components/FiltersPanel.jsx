@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { airlineLabel, airportLabel, aircraftLabel } from "../lib/icao.js";
+import { airlineLabel, aircraftLabel } from "../lib/icao.js";
 
 function distinctSorted(values, labelFn) {
   const counts = new Map();
@@ -12,31 +12,16 @@ function distinctSorted(values, labelFn) {
     .map(([code, count]) => ({ code, count, label: labelFn(code) }));
 }
 
-export default function FiltersPanel({ flights, trajectories, filters, setFilters }) {
+export default function FiltersPanel({ flights, filters, setFilters }) {
   const [open, setOpen] = useState(true);
 
   const airlines = useMemo(
-    () =>
-      distinctSorted(
-        [...flights.map((f) => f.airline), ...trajectories.map((t) => t.airline)],
-        airlineLabel,
-      ),
-    [flights, trajectories],
-  );
-  const airports = useMemo(
-    () => distinctSorted(trajectories.map((t) => t.origin_icao), airportLabel),
-    [trajectories],
+    () => distinctSorted(flights.map((f) => f.airline), airlineLabel),
+    [flights],
   );
   const types = useMemo(
-    () =>
-      distinctSorted(
-        [
-          ...flights.map((f) => f.aircraft_type),
-          ...trajectories.map((t) => t.aircraft_type),
-        ],
-        aircraftLabel,
-      ),
-    [flights, trajectories],
+    () => distinctSorted(flights.map((f) => f.aircraft_type), aircraftLabel),
+    [flights],
   );
 
   const toggle = (kind, code) =>
@@ -53,7 +38,7 @@ export default function FiltersPanel({ flights, trajectories, filters, setFilter
   const reset = () =>
     setFilters({ airlines: new Set(), airports: new Set(), aircraftTypes: new Set() });
 
-  const active = filters.airlines.size + filters.airports.size + filters.aircraftTypes.size;
+  const active = filters.airlines.size + filters.aircraftTypes.size;
 
   return (
     <aside
@@ -100,13 +85,6 @@ export default function FiltersPanel({ flights, trajectories, filters, setFilter
             selected={filters.airlines}
             onToggle={(c) => toggle("airlines", c)}
             empty="No airline data yet."
-          />
-          <Section
-            label="Origin airport"
-            items={airports}
-            selected={filters.airports}
-            onToggle={(c) => toggle("airports", c)}
-            empty="No tracks yet — collected daily at 06:00 UTC."
           />
           <Section
             label="Aircraft type"

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Globe from "react-globe.gl";
 import * as THREE from "three";
 
@@ -23,34 +23,25 @@ const COLOR_HOT = "#ff4d6d";
 const COLOR_COLD = "#a8d2ff";
 const isPersistent = (f) => f.risk === "persistent";
 
-// Hover tooltip — react-globe.gl renders this HTML next to the cursor.
-function trajectoryLabel(t) {
-  const callsign = (t.callsign || t.icao24 || "—").trim();
-  const airlineCode = (t.callsign || "").slice(0, 3).toUpperCase();
+// Hover tooltip rendered by react-globe.gl next to the cursor.
+function flightLabel(f) {
+  const callsign = (f.callsign || f.icao24 || "—").trim();
+  const airlineCode = (f.callsign || "").slice(0, 3).toUpperCase();
   const airlineName = airlineLabel(airlineCode);
-  const country = t.country || "—";
-  const risk = t.risk || "unknown";
-  const persistent = risk === "persistent";
-  const aircraftCode = t.aircraft_type;
+  const country = f.country || "—";
+  const persistent = f.risk === "persistent";
+  const aircraftCode = f.aircraft_type;
   const aircraftHuman = aircraftCode ? aircraftLabel(aircraftCode) : null;
-
-  const fmtTime = (iso) => {
-    if (!iso) return "—";
-    try {
-      const d = new Date(iso);
-      return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
-    } catch {
-      return "—";
-    }
-  };
-  const first = fmtTime(t.first_ts);
-  const last = fmtTime(t.last_ts);
   const dot = persistent ? "#ff4d6d" : "#78afe6";
-  const riskLabel = persistent ? "Persistent contrail" : "No persistent contrail";
+  const riskLabel = persistent ? "Persistent contrail · now" : "No persistent contrail";
 
   const aircraftLine = aircraftHuman
     ? `<div style="color:#cfd9ff; margin-top:2px">${aircraftHuman}<span style="color:#5e6f93; font-size:10.5px; margin-left:6px">${aircraftCode}</span></div>`
     : "";
+
+  const fl = f.alt_ft ? `FL${Math.round(f.alt_ft / 100)}` : null;
+  const kmh = f.velocity_ms ? `${Math.round(f.velocity_ms * 3.6)} km/h` : null;
+  const flightLine = [fl, kmh].filter(Boolean).join(" · ");
 
   return `
     <div style="
@@ -75,18 +66,11 @@ function trajectoryLabel(t) {
         <span style="font-weight:600; letter-spacing:-0.01em; color:#fff">${callsign}</span>
         <span style="color:#7b9cda; font-size:10.5px; letter-spacing:0.06em">${airlineCode}</span>
       </div>
-      <div style="color:#a0aac3">${airlineName}${airlineName !== airlineCode ? "" : ""}</div>
+      <div style="color:#a0aac3">${airlineName !== airlineCode ? airlineName : ""}</div>
       <div style="color:#5e6f93; font-size:11px">${country}</div>
       ${aircraftLine}
+      ${flightLine ? `<div style="color:#cfd9ff; font-size:11px; margin-top:4px; font-family: 'Geist Mono', ui-monospace, monospace">${flightLine}</div>` : ""}
       <div style="color:${dot}; font-weight:500; margin-top:6px">${riskLabel}</div>
-      <div style="
-        margin-top:8px; padding-top:7px;
-        border-top: 1px solid rgba(255,255,255,0.06);
-        color:#7b9cda; font-size:11px;
-        font-family: 'Geist Mono', ui-monospace, Menlo, monospace;
-      ">
-        ${first} → ${last} · ${t.points || 0} pts
-      </div>
     </div>
   `;
 }
@@ -96,8 +80,6 @@ export default function Earth({ flights = [], trajectories = [] }) {
   const wrapperRef = useRef(null);
   const [countries, setCountries] = useState(null);
   const [size, setSize] = useState({ w: 800, h: 800 });
-  const [hoveredIcao, setHoveredIcao] = useState(null);
-  const isHovered = useCallback((t) => t && t.icao24 === hoveredIcao, [hoveredIcao]);
 
   // Material is constant, build it once.
   const globeMaterial = useMemo(
@@ -168,34 +150,18 @@ export default function Earth({ flights = [], trajectories = [] }) {
         hexPolygonMargin={0.35}
         hexPolygonUseDots={true}
         hexPolygonColor={() => "rgba(170, 200, 235, 0.85)"}
-        /* All flights' trajectories. Persistent ones (the climate-relevant
-           signal) are highlighted in hot rose; everything else stays in
-           a cool, low-opacity blue so the visual hierarchy is obvious.
-           On hover, the highlighted track turns bright, thicker, glows, and
-           lifts a touch higher so it visibly detaches from the rest. */
-        pathsData={trajectories}
-        pathPoints={(t) => t.coords}
-        pathPointLat={(p) => p[1]}
-        pathPointLng={(p) => p[0]}
-        pathPointAlt={(p, i, all, t) => (isHovered(t) ? 0.075 : 0.05)}
-        pathColor={(t) => {
-          const hover = isHovered(t);
-          if (isPersistent(t)) {
-            return hover
-              ? ["rgba(255, 180, 200, 0.85)", "rgba(255, 255, 255, 1)"]
-              : ["rgba(255, 77, 109, 0.18)", "rgba(255, 77, 109, 0.95)"];
-          }
-          return hover
-            ? ["rgba(200, 230, 255, 0.85)", "rgba(255, 255, 255, 1)"]
-            : ["rgba(140, 195, 250, 0.18)", "rgba(140, 195, 250, 0.55)"];
-        }}
-        pathStroke={(t) => {
-          if (isHovered(t)) return isPersistent(t) ? 2.6 : 2.2;
-          return isPersistent(t) ? 1.4 : 1.1;
-        }}
-        pathTransitionDuration={0}
-        pathLabel={trajectoryLabel}
-        onPathHover={(t) => setHoveredIcao(t ? t.icao24 : null)}
+        /* Current-snapshot positions for every airborne flight. Persistent
+           contrail-forming flights are bigger, rose, lifted; everything else
+           is a tiny pale-blue dot so the hero signal pops without losing
+           the wider air-traffic context. */
+        pointsData={flights}
+        pointLat="lat"
+        pointLng="lon"
+        pointColor={(f) => (isPersistent(f) ? COLOR_HOT : COLOR_COLD)}
+        pointAltitude={(f) => (isPersistent(f) ? 0.014 : 0.003)}
+        pointRadius={(f) => (isPersistent(f) ? 0.22 : 0.06)}
+        pointsMerge={true}
+        pointLabel={flightLabel}
       />
     </div>
   );

@@ -27,7 +27,6 @@ export default function StatsPanel({ counts, ready }) {
       <div className="flex flex-col divide-y divide-white/5">
         <Stat label="Airborne · Europe" value={counts.total} ready={ready} />
         <Stat label="Persistent now" value={counts.persistent} ready={ready} accent />
-        <Stat label="Tracks · 24 h" value={counts.tracks} ready={ready} />
         <div className="flex items-baseline justify-between px-[18px] py-[10px]">
           <span className="text-[10.5px] uppercase tracking-[0.12em] text-[#7b9cda]">Snapshot</span>
           <span className="mono text-[11px] text-[#7b9cda]">{formatAge(counts.fetchedAt)}</span>
