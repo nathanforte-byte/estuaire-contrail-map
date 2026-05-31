@@ -36,9 +36,13 @@ function useApi(path, intervalMs) {
 }
 
 export default function App() {
-  // Pull every position observed over the last 12 h. The scrubber plays
-  // through the 5-min buckets stamped on each row.
-  const positionsResp = useApi("/api/positions?hours=12", 120000);
+  // Progressive load:
+  //   1. tiny fetch (~1 bucket, fast) → globe renders almost immediately
+  //   2. full 12 h fetch in the background → scrubber range expands once it
+  //      lands. We swap in the bigger payload whenever it arrives.
+  const livePositions = useApi("/api/positions?hours=1", 120000);
+  const fullPositions = useApi("/api/positions?hours=12", 180000);
+  const positionsResp = fullPositions || livePositions;
 
   const [filters, setFilters] = useState({
     airlines: new Set(),

@@ -433,7 +433,16 @@ async def positions(hours: int = 12, max_rows: int = 60000):
         "positions": rows,
     }
     _store(cache_key, payload)
-    return payload
+    # Vercel-edge cache: serve subsequent visitors instantly. Data anchors on
+    # max(ts), which is stable while collection is paused, so a 10-minute
+    # browser/CDN cache is safe. Live mode will still update every 5 minutes
+    # because the anchor advances and busts the cache via stale-while-revalidate.
+    return JSONResponse(
+        payload,
+        headers={
+            "Cache-Control": "public, s-maxage=600, stale-while-revalidate=1800",
+        },
+    )
 
 
 @app.get("/api/health")
