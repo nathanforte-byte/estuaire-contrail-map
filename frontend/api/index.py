@@ -13,6 +13,7 @@ hyperscaler egress (GCP, AWS, CF). Only GitHub Actions runners (Azure) pass.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 import time
@@ -395,22 +396,37 @@ async def positions(hours: int = 12, max_rows: int = 60000):
         f"&order=ts.desc,icao24"
         f"&select=icao24,callsign,country,ts,lat,lon,alt_ft,heading,risk"
     )
-    rows: list[dict] = []
     PAGE = 1000
+    rows: list[dict] = []
     try:
         async with httpx.AsyncClient(timeout=25.0) as client:
-            offset = 0
-            while len(rows) < max_rows:
-                page_url = f"{base_url}&limit={PAGE}&offset={offset}"
-                r = await client.get(page_url, headers=headers)
+            # 1. Ask Supabase how many rows match (cheap — `Prefer: count=exact`
+            #    + `Range: 0-0` returns a single header).
+            count_r = await client.get(
+                f"{base_url}&limit=1",
+                headers={**headers, "Prefer": "count=exact", "Range-Unit": "items", "Range": "0-0"},
+            )
+            count_r.raise_for_status()
+            content_range = count_r.headers.get("content-range", "*/0")
+            try:
+                total_available = int(content_range.split("/")[-1])
+            except (ValueError, IndexError):
+                total_available = 0
+            total = min(total_available, max_rows)
+
+            # 2. Fan out all page fetches in parallel (Supabase caps each at
+            #    PAGE rows, so we know exactly how many requests we need).
+            offsets = list(range(0, total, PAGE)) if total else []
+            page_results = await asyncio.gather(
+                *(
+                    client.get(f"{base_url}&limit={PAGE}&offset={off}", headers=headers)
+                    for off in offsets
+                ),
+                return_exceptions=False,
+            )
+            for r in page_results:
                 r.raise_for_status()
-                page = r.json()
-                if not page:
-                    break
-                rows.extend(page)
-                if len(page) < PAGE:
-                    break
-                offset += PAGE
+                rows.extend(r.json())
     except httpx.HTTPError as e:
         raise HTTPException(502, f"Supabase upstream: {type(e).__name__}: {e!r}") from e
 
@@ -434,13 +450,13 @@ async def positions(hours: int = 12, max_rows: int = 60000):
     }
     _store(cache_key, payload)
     # Vercel-edge cache: serve subsequent visitors instantly. Data anchors on
-    # max(ts), which is stable while collection is paused, so a 10-minute
-    # browser/CDN cache is safe. Live mode will still update every 5 minutes
-    # because the anchor advances and busts the cache via stale-while-revalidate.
+    # max(ts), which is stable while collection is paused, so we can cache
+    # aggressively. When the pipeline resumes, the cache busts every ~5 min
+    # via stale-while-revalidate (background revalidation, no user wait).
     return JSONResponse(
         payload,
         headers={
-            "Cache-Control": "public, s-maxage=600, stale-while-revalidate=1800",
+            "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
         },
     )
 
