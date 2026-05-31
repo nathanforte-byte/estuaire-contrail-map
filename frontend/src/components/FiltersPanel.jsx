@@ -13,7 +13,10 @@ function distinctSorted(values, labelFn) {
 }
 
 export default function FiltersPanel({ flights, filters, setFilters }) {
-  const [open, setOpen] = useState(true);
+  // Collapsed by default — the open panel is ~390 px tall, which doesn't
+  // fit alongside the header + scrubber on shorter viewports (laptops in
+  // non-fullscreen mode). User clicks the header to expand.
+  const [open, setOpen] = useState(false);
 
   const airlines = useMemo(
     () => distinctSorted(flights.map((f) => f.airline), airlineLabel),
