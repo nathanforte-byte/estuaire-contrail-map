@@ -36,10 +36,8 @@ function useApi(path, intervalMs) {
 }
 
 export default function App() {
-  // Progressive load:
-  //   1. tiny fetch (~1 bucket, fast) → globe renders almost immediately
-  //   2. full 12 h fetch in the background → scrubber range expands once it
-  //      lands. We swap in the bigger payload whenever it arrives.
+  // Progressive load: tiny fetch first (globe renders quickly), full 12 h
+  // backfills in the background to populate the scrubber.
   const livePositions = useApi("/api/positions?hours=1", 120000);
   const fullPositions = useApi("/api/positions?hours=12", 180000);
   const positionsResp = fullPositions || livePositions;
@@ -49,15 +47,11 @@ export default function App() {
     airports: new Set(),
     aircraftTypes: new Set(),
   });
-  // null = stick to the latest bucket (auto-advances as new data arrives).
-  // a string ts = freeze the globe on that bucket while scrubbing.
   const [scrubberTs, setScrubberTs] = useState(null);
 
-  // Buckets are pre-sorted descending by the API; lowest index = newest.
   const buckets = useMemo(() => positionsResp?.buckets || [], [positionsResp]);
   const latestBucket = buckets[0] || null;
 
-  // Group raw positions into a Map<bucketTs, flightObjects[]>.
   const positionsByBucket = useMemo(() => {
     const m = new Map();
     for (const row of positionsResp?.positions || []) {
@@ -70,7 +64,6 @@ export default function App() {
     return m;
   }, [positionsResp]);
 
-  // What the user is currently looking at on the globe.
   const activeBucket = scrubberTs ?? latestBucket;
   const activeFlights = useMemo(
     () => positionsByBucket.get(activeBucket) || [],
@@ -92,7 +85,6 @@ export default function App() {
     [filteredFlights, persistentFlights, activeBucket],
   );
 
-  // Scrubber range = first and last bucket timestamp.
   const timeRange = useMemo(() => {
     if (!buckets.length) return null;
     return {
@@ -101,8 +93,6 @@ export default function App() {
     };
   }, [buckets]);
 
-  // The scrubber emits absolute ms; snap it to the closest known bucket so
-  // the globe always lands on a concrete frame.
   const onScrub = (ms) => {
     if (ms == null) {
       setScrubberTs(null);
@@ -121,9 +111,10 @@ export default function App() {
   };
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-black text-white">
+    <div className="relative h-[100dvh] w-screen overflow-hidden bg-black text-white">
       <Earth flights={filteredFlights} />
 
+      {/* Ambient corner glows */}
       <div className="pointer-events-none fixed inset-0 z-0">
         <div className="absolute -left-32 -top-32 size-[520px] rounded-full bg-[radial-gradient(closest-side,#1a2a5c_0%,transparent_70%)] opacity-50" />
         <div className="absolute -right-40 -top-40 size-[520px] rounded-full bg-[radial-gradient(closest-side,#2a1a4c_0%,transparent_70%)] opacity-35" />
@@ -132,52 +123,68 @@ export default function App() {
         <div className="absolute inset-x-0 bottom-0 h-[42vh] bg-[radial-gradient(80%_60%_at_50%_100%,#0a1f4a_0%,transparent_70%)] opacity-55" />
       </div>
 
+      {/* UI overlay — 2 cols × 4 rows grid, all panels live INSIDE the grid
+          so the layout engine guarantees they never overlap and never bleed
+          past the viewport. Row 4 holds the scrubber spanning both columns. */}
       <div
         className="
           pointer-events-none fixed inset-0 z-10
           grid grid-cols-1 sm:grid-cols-2
-          grid-rows-[auto_1fr_auto] gap-4 p-4 sm:gap-5 sm:p-5
-          [&>*]:pointer-events-auto
+          grid-rows-[auto_1fr_auto_auto] gap-3 p-3 sm:gap-4 sm:p-4
+          [&>*]:min-h-0 [&>*]:pointer-events-auto
         "
       >
-        <div className="self-start justify-self-start max-w-full">
+        {/* Row 1 — top corners */}
+        <div className="self-start justify-self-start max-w-full max-h-[42vh] overflow-hidden">
           <HeaderPanel snapshot={positionsResp} />
         </div>
-        <div className="self-start justify-self-end hidden sm:block">
+        <div className="self-start justify-self-end hidden sm:block max-h-[42vh] overflow-hidden">
           <StatsPanel counts={counts} ready={!!positionsResp} />
         </div>
 
+        {/* Row 2 — empty 1fr, lets the globe breathe through the middle */}
         <div className="hidden sm:block" />
         <div className="hidden sm:block" />
 
-        <div className="self-end justify-self-start max-w-full">
+        {/* Row 3 — bottom corners */}
+        <div className="self-end justify-self-start max-w-full max-h-[44vh] overflow-hidden">
           <FiltersPanel
             flights={activeFlights}
             filters={filters}
             setFilters={setFilters}
           />
         </div>
-        <div className="self-end justify-self-end max-w-full">
+        <div className="self-end justify-self-end max-w-full max-h-[44vh] overflow-hidden">
           <GatePanel />
+        </div>
+
+        {/* Row 4 — scrubber spanning both columns, never overlaps the bottom
+            corner panels because the grid reserves its own row for it. */}
+        <div className="col-span-1 sm:col-span-2 flex justify-center">
+          <TimeScrubber
+            range={timeRange}
+            value={scrubberTs ? new Date(scrubberTs).getTime() : null}
+            onChange={onScrub}
+            windowMs={60 * 1000}
+            visibleCount={filteredFlights.length}
+            totalCount={activeFlights.length}
+            label={activeBucket}
+          />
         </div>
       </div>
 
-      <div className="sm:hidden">
+      <div className="sm:hidden fixed top-3 right-3 z-20">
         <StatsPanel counts={counts} ready={!!positionsResp} />
       </div>
 
-      <TimeScrubber
-        range={timeRange}
-        value={scrubberTs ? new Date(scrubberTs).getTime() : null}
-        onChange={onScrub}
-        windowMs={5 * 60 * 1000}
-        visibleCount={filteredFlights.length}
-        totalCount={activeFlights.length}
-        label={activeBucket}
-      />
-
-      <div className="mono pointer-events-none fixed bottom-2 left-1/2 z-30 -translate-x-1/2 text-[10px] tracking-[0.18em] text-[#3a4256]">
-        OPENSKY · OPEN-METEO · NATURAL EARTH · BUILT BY ESTUAIRE
+      {/* Model accuracy disclaimer + attribution */}
+      <div className="pointer-events-none fixed bottom-1 left-1/2 z-30 -translate-x-1/2 text-center">
+        <div className="mono text-[10px] tracking-[0.18em] text-[#3a4256]">
+          OPENSKY · OPEN-METEO · NATURAL EARTH · BUILT BY ESTUAIRE
+        </div>
+        <div className="mt-[2px] text-[10px] text-[#3a4256]">
+          Estimated contrail probability · simplified Schmidt-Appleman · ±30%
+        </div>
       </div>
     </div>
   );

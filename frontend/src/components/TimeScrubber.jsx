@@ -35,8 +35,8 @@ export default function TimeScrubber({
   return (
     <aside
       className="
-        glass pointer-events-auto fixed bottom-5 left-1/2 z-30 -translate-x-1/2
-        flex w-[min(960px,calc(100vw-32px))] items-center gap-5
+        glass pointer-events-auto
+        flex w-[min(960px,calc(100vw-24px))] items-center gap-5
         rounded-2xl px-5 py-[14px]
       "
     >
