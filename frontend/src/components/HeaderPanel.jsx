@@ -1,13 +1,30 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const RISKS = [
   { key: "persistent", label: "Persistent contrail · now", color: "#ff4d6d" },
   { key: "other", label: "Other airborne flights", color: "#a8d2ff" },
 ];
 
-export default function HeaderPanel({ snapshot }) {
+function formatAge(iso) {
+  if (!iso) return "—";
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const mins = Math.floor(seconds / 60);
+  if (mins < 60) return `${mins}m ago`;
+  return `${Math.floor(mins / 60)}h ago`;
+}
+
+export default function HeaderPanel({ snapshot, counts, ready }) {
   const [open, setOpen] = useState(false);
   const live = !!snapshot;
+
+  // Tick "snapshot age" every 15 s so the label stays current without a
+  // full re-render storm.
+  const [, force] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => force((n) => n + 1), 15000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <aside
@@ -17,7 +34,6 @@ export default function HeaderPanel({ snapshot }) {
         animate-in fade-in slide-in-from-top-2 duration-500
       "
     >
-      {/* Top status row + tiny inline legend dots — always visible, ~64 px total */}
       <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-[#7b9cda]">
         <span className="relative inline-flex size-[7px] items-center justify-center">
           <span
@@ -34,6 +50,16 @@ export default function HeaderPanel({ snapshot }) {
       <h1 className="mt-[6px] bg-gradient-to-b from-[#edeffd] to-[#7b9cda] bg-clip-text text-[17px] font-semibold leading-[1.18] tracking-[-0.02em] text-transparent">
         Contrails over Europe · right now
       </h1>
+
+      {/* Stat block — moved up from the old top-right StatsPanel. */}
+      <div className="mt-3 flex flex-col divide-y divide-white/5 rounded-lg border border-white/[0.04] bg-white/[0.02]">
+        <Stat label="Airborne · Europe" value={counts?.total} ready={ready} />
+        <Stat label="Persistent now" value={counts?.persistent} ready={ready} accent />
+        <div className="flex items-baseline justify-between px-3 py-[6px]">
+          <span className="text-[10px] uppercase tracking-[0.12em] text-[#7b9cda]">Snapshot</span>
+          <span className="mono text-[10.5px] text-[#7b9cda]">{formatAge(counts?.fetchedAt)}</span>
+        </div>
+      </div>
 
       <ul className="mt-3 flex flex-col gap-[6px]">
         {RISKS.map((r) => (
@@ -72,5 +98,22 @@ export default function HeaderPanel({ snapshot }) {
 
       <style>{`@keyframes ping{75%,100%{transform:scale(2.4);opacity:0}}`}</style>
     </aside>
+  );
+}
+
+function Stat({ label, value, ready, accent }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 px-3 py-[7px]">
+      <span className="text-[10px] uppercase tracking-[0.12em] text-[#7b9cda]">{label}</span>
+      <span
+        className={
+          "mono text-[18px] font-semibold leading-none tracking-[-0.02em] " +
+          (accent ? "text-[#ff4d6d]" : "text-[#edeffd]")
+        }
+        style={{ fontVariantNumeric: "tabular-nums" }}
+      >
+        {ready ? (value || 0).toLocaleString() : <span className="opacity-30">—</span>}
+      </span>
+    </div>
   );
 }

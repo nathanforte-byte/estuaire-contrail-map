@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Earth from "./components/Earth.jsx";
 import HeaderPanel from "./components/HeaderPanel.jsx";
-import StatsPanel from "./components/StatsPanel.jsx";
 import FiltersPanel from "./components/FiltersPanel.jsx";
 import GatePanel from "./components/GatePanel.jsx";
 import TimeScrubber from "./components/TimeScrubber.jsx";
@@ -134,13 +133,16 @@ export default function App() {
           [&>*]:min-h-0 [&>*]:pointer-events-auto
         "
       >
-        {/* Row 1 — top corners */}
-        <div className="self-start justify-self-start max-w-full max-h-[42vh] overflow-hidden">
-          <HeaderPanel snapshot={positionsResp} />
+        {/* Row 1 — top-left holds Header + Stats combined; top-right left
+            empty so the globe shows through. */}
+        <div className="self-start justify-self-start max-w-full max-h-[50vh] overflow-hidden">
+          <HeaderPanel
+            snapshot={positionsResp}
+            counts={counts}
+            ready={!!positionsResp}
+          />
         </div>
-        <div className="self-start justify-self-end hidden md:block max-h-[42vh] overflow-hidden">
-          <StatsPanel counts={counts} ready={!!positionsResp} />
-        </div>
+        <div className="hidden md:block" />
 
         {/* Row 2 — empty 1fr filler */}
         <div className="hidden md:block" />
