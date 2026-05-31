@@ -123,14 +123,14 @@ export default function App() {
         <div className="absolute inset-x-0 bottom-0 h-[42vh] bg-[radial-gradient(80%_60%_at_50%_100%,#0a1f4a_0%,transparent_70%)] opacity-55" />
       </div>
 
-      {/* UI overlay — 2 cols × 4 rows grid, all panels live INSIDE the grid
-          so the layout engine guarantees they never overlap and never bleed
-          past the viewport. Row 4 holds the scrubber spanning both columns. */}
+      {/* UI overlay — single-column on phones/narrow windows, 2 cols × 4 rows
+          at md+ (768 px). Two-column kicks in only when there's room for two
+          full-width panels side by side; below that everything stacks. */}
       <div
         className="
           pointer-events-none fixed inset-0 z-10
-          grid grid-cols-1 sm:grid-cols-2
-          grid-rows-[auto_1fr_auto_auto] gap-3 p-3 sm:gap-4 sm:p-4
+          grid grid-cols-1 md:grid-cols-2
+          grid-rows-[auto_1fr_auto_auto] gap-3 p-3 md:gap-4 md:p-4
           [&>*]:min-h-0 [&>*]:pointer-events-auto
         "
       >
@@ -138,13 +138,13 @@ export default function App() {
         <div className="self-start justify-self-start max-w-full max-h-[42vh] overflow-hidden">
           <HeaderPanel snapshot={positionsResp} />
         </div>
-        <div className="self-start justify-self-end hidden sm:block max-h-[42vh] overflow-hidden">
+        <div className="self-start justify-self-end hidden md:block max-h-[42vh] overflow-hidden">
           <StatsPanel counts={counts} ready={!!positionsResp} />
         </div>
 
-        {/* Row 2 — empty 1fr, lets the globe breathe through the middle */}
-        <div className="hidden sm:block" />
-        <div className="hidden sm:block" />
+        {/* Row 2 — empty 1fr filler */}
+        <div className="hidden md:block" />
+        <div className="hidden md:block" />
 
         {/* Row 3 — bottom corners */}
         <div className="self-end justify-self-start max-w-full max-h-[44vh] overflow-hidden">
@@ -158,9 +158,8 @@ export default function App() {
           <GatePanel />
         </div>
 
-        {/* Row 4 — scrubber spanning both columns, never overlaps the bottom
-            corner panels because the grid reserves its own row for it. */}
-        <div className="col-span-1 sm:col-span-2 flex justify-center">
+        {/* Row 4 — scrubber spans both columns */}
+        <div className="col-span-1 md:col-span-2 flex justify-center">
           <TimeScrubber
             range={timeRange}
             value={scrubberTs ? new Date(scrubberTs).getTime() : null}
@@ -171,10 +170,6 @@ export default function App() {
             label={activeBucket}
           />
         </div>
-      </div>
-
-      <div className="sm:hidden fixed top-3 right-3 z-20">
-        <StatsPanel counts={counts} ready={!!positionsResp} />
       </div>
 
       {/* Model accuracy disclaimer + attribution */}
